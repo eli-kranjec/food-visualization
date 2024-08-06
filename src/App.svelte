@@ -25,10 +25,12 @@
     size: Attribute<number>;
     xIndex: Attribute<number>;
     yIndex: Attribute<number>;
+    marks: Attribute<MarkRenderGroup<FoodMark>>;
   };
 
   let canvasHeight: number = 1000;
   let canvasWidth: number = 830;
+  let gridSize: number = 5;
 
   let dataCSV: d3.DSVRowArray;
   let canvas: HTMLCanvasElement;
@@ -42,6 +44,8 @@
   var imageData: ImageData;
   var zoomedModeMarkCount: number = 5;
   let set: MarkRenderGroup<FoodMark>;
+  let currentView: "food" | "ingredients" | "summary" = "food";
+
   function preloadImages(
     dataCSV: d3.DSVRowArray,
     initialSetup: boolean = false
@@ -110,8 +114,6 @@
     });
 
   function setupCanvas() {
-    // canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-    // canvas.height = canvas.offsetHeight * window.devicePixelRatio;
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
     imageCanvas.height = canvas.height;
@@ -124,7 +126,6 @@
     if (!dataCSV || !canvas) return;
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    // ctx = imageCanvas.getContext("2d", { willReadFrequently: true });
     if (!ctx || !ctx) return;
 
     const transform = d3.zoomTransform(canvas);
@@ -139,21 +140,11 @@
         y - size <= canvas.clientHeight
       );
     });
-    // new feature - d3.extent for markset?
 
-    if (visibleMarks.count() > 500) {
-      // let maxes = getMaxes(visibleMarks);
-      // let mins = getMins(visibleMarks);
+    if (visibleMarks.count() > 500 && currentView === "food") {
       ctx.resetTransform();
       ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-
-      // summarySet
-      //   .update("x", (m) => transform.applyX((maxes[0] / 5) * m.attr("xIndex")))
-      //   .update("y", (m) => transform.applyY((maxes[1] / 5) * m.attr("yIndex")))
-      //   .update("size", (m) => {
-      //     return (set.count() / foodSet.count()) * 20000;
-      //   });
 
       summarySet.forEach((mark) => {
         const { x, y, size } = mark.get();
@@ -161,7 +152,6 @@
         const transformedY = Math.round(transform.applyY(y));
         if (ctx) {
           ctx.fillStyle = "blue";
-          ctx.save();
           ctx.beginPath();
           ctx.arc(
             transformedX + size,
@@ -172,9 +162,27 @@
             true
           );
           ctx.fill();
+          ctx.closePath();
         }
       });
+    } else if (visibleMarks.count() > 500) {
+      summarySet.forEach((mark) => {
+        mark
+          .attr("marks")
+          .animateTo("x", () => Math.round(transform.applyX(mark.attr("x"))), {
+            duration: 1000,
+          });
+        mark
+          .attr("marks")
+          .animateTo("y", () => Math.round(transform.applyY(mark.attr("y"))), {
+            duration: 1000,
+          });
+        mark.attr("marks").animateTo("size", () => 0, { duration: 1000 });
+      });
+
+      currentView = "summary";
     } else {
+      currentView = "food";
       ctx.resetTransform();
       ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
@@ -195,14 +203,46 @@
           );
           ctx.closePath();
           ctx.clip();
-          ctx.drawImage(img, transformedX, transformedY, size * 2, size * 2); // round to int?
+          ctx.drawImage(img, transformedX, transformedY, size * 2, size * 2);
           ctx.restore();
         }
       });
     }
+  };
 
-    // imageData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
-    // ctx.putImageData(imageData, 0, 0);
+  const createSummaryMarks = (): MarkRenderGroup<SummaryMark> => {
+    let arr: Mark<SummaryMark>[] = [];
+    let maxes = getMaxes(foodSet);
+    let mins = getMins(foodSet);
+
+    for (let i = 0; i < gridSize; i++) {
+      for (let j = 0; j < gridSize; j++) {
+        let set = foodSet.filter((mark) => {
+          const x = mark.attr("x");
+          const y = mark.attr("y");
+          return (
+            x >= mins[0] + (maxes[0] / gridSize) * i &&
+            x < mins[0] + (maxes[0] / gridSize) * (i + 1) &&
+            y >= mins[1] + (maxes[1] / gridSize) * j &&
+            y < mins[1] + (maxes[1] / gridSize) * (j + 1)
+          );
+        });
+
+        let setMark = new Mark<SummaryMark>(`${i}-${j}`, {
+          x: new Attribute(mins[0] + (maxes[0] / gridSize) * (i + 0.5)),
+          y: new Attribute(mins[1] + (maxes[1] / gridSize) * (j + 0.5)),
+          size: new Attribute(
+            ((set.count() / foodSet.count() + 0.3) * canvasWidth) / gridSize / 2
+          ),
+          xIndex: new Attribute(i),
+          yIndex: new Attribute(j),
+          marks: new Attribute(set),
+        });
+        arr.push(setMark);
+      }
+    }
+
+    return new MarkRenderGroup(arr);
   };
 
   const createAxes = () => {
@@ -258,8 +298,27 @@
       );
   };
 
-  const createMarkSet = (): Mark<FoodMark>[] =>
-    dataCSV ? dataCSV.map((point) => createMark(point[""])) : [];
+  function getMaxes(markset: MarkRenderGroup<FoodMark>): number[] {
+    let xMax: number = 0;
+    let yMax: number = 0;
+    markset.map((mark) => {
+      xMax = mark.attr("x") > xMax ? mark.attr("x") : xMax;
+      yMax = mark.attr("y") > yMax ? mark.attr("y") : yMax;
+    });
+
+    return [xMax, yMax];
+  }
+
+  function getMins(markset: MarkRenderGroup<FoodMark>): number[] {
+    let xMin: number = 10000000;
+    let yMin: number = 10000000;
+    markset.map((mark) => {
+      xMin = mark.attr("x") < xMin ? mark.attr("x") : xMin;
+      yMin = mark.attr("y") < yMin ? mark.attr("y") : yMin;
+    });
+
+    return [xMin, yMin];
+  }
 
   onMount(async () => {
     dataCSV = await d3.csv("src/datasets/food_data.csv");
@@ -269,20 +328,6 @@
     await preloadImages(dataCSV, true);
     imageCanvas = document.createElement("canvas");
     imagesLoaded = true;
-    // let maxes = getMaxes(foodSet);
-    // let mins = getMins(foodSet);
-    // set = foodSet.filter(
-    //   (mark) =>
-    //     mark.attr("x") <=
-    //       mins[0] + (maxes[0] / zoomedModeMarkCount) * (m.attr("xIndex") + 1) &&
-    //     mark.attr("y") >=
-    //       mins[1] + (maxes[1] / zoomedModeMarkCount) * m.attr("yIndex") &&
-    //     mark.attr("y") <=
-    //       mins[1] + (maxes[1] / zoomedModeMarkCount) * (m.attr("yIndex") + 1) &&
-    //     mark.attr("x") >=
-    //       mins[0] + (maxes[0] / zoomedModeMarkCount) * m.attr("xIndex")
-    // );
-
     setupCanvas();
   });
 
@@ -330,69 +375,8 @@
       }
     });
 
-  function getMaxes(markset: MarkRenderGroup<FoodMark>): number[] {
-    let xMax: number = 0;
-    let yMax: number = 0;
-    markset.map((mark) => {
-      xMax = mark.attr("x") > xMax ? mark.attr("x") : xMax;
-      yMax = mark.attr("y") > yMax ? mark.attr("y") : yMax;
-    });
-
-    return [xMax, yMax];
-  }
-
-  function getMins(markset: MarkRenderGroup<FoodMark>): number[] {
-    let xMin: number = 10000000;
-    let yMin: number = 10000000;
-    markset.map((mark) => {
-      xMin = mark.attr("x") < xMin ? mark.attr("x") : xMin;
-      yMin = mark.attr("y") < yMin ? mark.attr("y") : yMin;
-    });
-
-    return [xMin, yMin];
-  }
-
-  function createSummaryMarks(): MarkRenderGroup<SummaryMark> {
-    let arr: Mark<SummaryMark>[] = [];
-    let maxes = getMaxes(foodSet);
-    let mins = getMins(foodSet);
-    for (let i = 1; i < zoomedModeMarkCount ** 2 + 1; i++) {
-      let set = foodSet.filter(
-        (mark) =>
-          mark.attr("x") <=
-            mins[0] +
-              (maxes[0] / zoomedModeMarkCount) *
-                ((i % zoomedModeMarkCount) + 1) &&
-          mark.attr("y") >=
-            mins[1] +
-              (maxes[1] / zoomedModeMarkCount) *
-                Math.floor(i / zoomedModeMarkCount) &&
-          mark.attr("y") <=
-            mins[1] +
-              (maxes[1] / zoomedModeMarkCount) *
-                Math.floor(i / zoomedModeMarkCount) +
-              1 &&
-          mark.attr("x") >=
-            mins[0] +
-              (maxes[0] / zoomedModeMarkCount) * (i % zoomedModeMarkCount)
-      );
-      let setMark = new Mark<SummaryMark>(i, {
-        x: new Attribute(
-          10000 *
-            Math.random() /* zoomedModeMarkCount) * (i % zoomedModeMarkCount) */
-        ),
-        y: new Attribute(
-          10000 *
-            Math.random() /* zoomedModeMarkCount) * Math.floor(i / zoomedModeMarkCount) */
-        ),
-        size: new Attribute(/*(set.count() / foodSet.count()) * 400000*/ 10000),
-        xIndex: new Attribute(i % zoomedModeMarkCount),
-        yIndex: new Attribute(Math.floor(i / zoomedModeMarkCount)),
-      });
-      arr.push(setMark);
-    }
-
-    return new MarkRenderGroup(arr);
+  function createMarkSet(): Mark<FoodMark>[] {
+    return dataCSV ? dataCSV.map((point) => createMark(point[""])) : [];
   }
 </script>
 
@@ -426,7 +410,5 @@
     position: absolute;
     bottom: 5%;
     left: 30%;
-    /* width: 60%;
-    height: 95%; */
   }
 </style>
