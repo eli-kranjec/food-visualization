@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.node.json",
+  "include": ["src/**/*", "vite.config.ts", "ingredients_filtered.js"]
+}
+
