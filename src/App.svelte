@@ -17,6 +17,8 @@
     img: Attribute<HTMLImageElement>;
     ingredients: Attribute<string[]>;
     size: Attribute<number>;
+    time: Attribute<number>;
+    placeholder: Attribute<number>;
   };
 
   type SummaryMark = {
@@ -39,12 +41,9 @@
   let summarySet: MarkRenderGroup<SummaryMark>;
   let imageCache: Record<string, HTMLImageElement> = {};
   let imagesLoaded: boolean = false;
-  var imageCanvas: HTMLCanvasElement;
-  var ctx: CanvasRenderingContext2D | null;
-  var imageData: ImageData;
-  var zoomedModeMarkCount: number = 5;
-  let set: MarkRenderGroup<FoodMark>;
+  let imageCanvas: HTMLCanvasElement;
   let currentView: "food" | "ingredients" | "summary" = "food";
+  let drawTransitionBegun: boolean = false;
 
   function preloadImages(
     dataCSV: d3.DSVRowArray,
@@ -68,8 +67,8 @@
         return (
           x + size >= 0 &&
           y + size >= 0 &&
-          x - size <= canvas.clientWidth &&
-          y - size <= canvas.clientHeight
+          x - size <= canvas.clientWidth / 2 &&
+          y - size <= canvas.clientHeight / 2
         );
       });
 
@@ -111,6 +110,8 @@
         },
       },
       size: { valueFn: (mark) => mark.size },
+      time: { value: 10000 * Math.random() },
+      placeholder: { value: 10000 * Math.random() },
     });
 
   function setupCanvas() {
@@ -119,94 +120,91 @@
     imageCanvas.height = canvas.height;
     imageCanvas.width = canvas.width;
     d3.select(canvas as Element).call(zoom);
-    drawFoodView();
+    drawMarks();
   }
 
-  const drawFoodView = () => {
+  const drawMarks = () => {
     if (!dataCSV || !canvas) return;
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx || !ctx) return;
+    if (!ctx) return;
+
+    // let currentMarkGroup:
+    //   | MarkRenderGroup<FoodMark>
+    //   | MarkRenderGroup<SummaryMark> = foodSet;
+
+    // switch (currentView) {
+    //   case "food":
+    //     currentMarkGroup = foodSet;
+    //   case "summary":
+    //     currentMarkGroup = summarySet;
+    // }
 
     const transform = d3.zoomTransform(canvas);
-    const visibleMarks = foodSet.filter((mark) => {
-      const x = transform.applyX(mark.attr("x"));
-      const y = transform.applyY(mark.attr("y"));
-      const size = 20;
-      return (
-        x + size >= 0 &&
-        y + size >= 0 &&
-        x - size <= canvas.clientWidth &&
-        y - size <= canvas.clientHeight
-      );
-    });
-
-    if (visibleMarks.count() > 500 && currentView === "food") {
+    if (currentView === "food") {
+      const visibleMarks = foodSet.filter((mark) => {
+        const x = transform.applyX(mark.attr("x"));
+        const y = transform.applyY(mark.attr("y"));
+        const size = 20;
+        return (
+          x + size >= 0 &&
+          y + size >= 0 &&
+          x - size <= canvas.clientWidth &&
+          y - size <= canvas.clientHeight
+        );
+      });
+      if (visibleMarks.count() > 500 && !drawTransitionBegun) {
+        triggerSummaryView();
+        drawTransitionBegun = true;
+      } else {
+        ctx.resetTransform();
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+        visibleMarks.forEach((mark) => {
+          const { x, y, img, size } = mark.get();
+          const transformedX = Math.round(transform.applyX(x));
+          const transformedY = Math.round(transform.applyY(y));
+          if (img.src && img.complete) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(
+              transformedX + size,
+              transformedY + size,
+              size,
+              0,
+              Math.PI * 2,
+              true
+            );
+            ctx.closePath();
+            ctx.clip();
+            ctx.drawImage(img, transformedX, transformedY, size * 2, size * 2);
+            ctx.restore();
+          }
+        });
+      }
+    } else if (currentView === "summary") {
       ctx.resetTransform();
       ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-
       summarySet.forEach((mark) => {
         const { x, y, size } = mark.get();
         const transformedX = Math.round(transform.applyX(x));
         const transformedY = Math.round(transform.applyY(y));
-        if (ctx) {
-          ctx.fillStyle = "blue";
-          ctx.beginPath();
-          ctx.arc(
-            transformedX + size,
-            transformedY + size,
-            size,
-            0,
-            Math.PI * 2,
-            true
-          );
-          ctx.fill();
-          ctx.closePath();
-        }
-      });
-    } else if (visibleMarks.count() > 500) {
-      summarySet.forEach((mark) => {
-        mark
-          .attr("marks")
-          .animateTo("x", () => Math.round(transform.applyX(mark.attr("x"))), {
-            duration: 1000,
-          });
-        mark
-          .attr("marks")
-          .animateTo("y", () => Math.round(transform.applyY(mark.attr("y"))), {
-            duration: 1000,
-          });
-        mark.attr("marks").animateTo("size", () => 0, { duration: 1000 });
+        ctx.fillStyle = "blue";
+        ctx.beginPath();
+        ctx.arc(
+          transformedX + size,
+          transformedY + size,
+          size,
+          0,
+          Math.PI * 2,
+          true
+        );
+        ctx.fill();
+        ctx.closePath();
       });
 
-      currentView = "summary";
-    } else {
-      currentView = "food";
-      ctx.resetTransform();
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-      visibleMarks.forEach((mark) => {
-        const { x, y, img, size } = mark.get();
-        const transformedX = Math.round(transform.applyX(x));
-        const transformedY = Math.round(transform.applyY(y));
-        if (img.src && img.complete && ctx) {
-          ctx.save();
-          ctx.beginPath();
-          ctx.arc(
-            transformedX + size,
-            transformedY + size,
-            size,
-            0,
-            Math.PI * 2,
-            true
-          );
-          ctx.closePath();
-          ctx.clip();
-          ctx.drawImage(img, transformedX, transformedY, size * 2, size * 2);
-          ctx.restore();
-        }
-      });
+      drawTransitionBegun = false;
     }
   };
 
@@ -228,11 +226,11 @@
           );
         });
 
-        let setMark = new Mark<SummaryMark>(`${i}-${j}`, {
-          x: new Attribute(mins[0] + (maxes[0] / gridSize) * (i + 0.5)),
-          y: new Attribute(mins[1] + (maxes[1] / gridSize) * (j + 0.5)),
+        let setMark = new Mark<SummaryMark>(`${i}${j}`, {
+          x: new Attribute(mins[0] + (maxes[0] / gridSize) * i),
+          y: new Attribute(mins[1] + (maxes[1] / gridSize) * j),
           size: new Attribute(
-            ((set.count() / foodSet.count() + 0.3) * canvasWidth) / gridSize / 2
+            ((set.count() / foodSet.count() + 0.3) * canvasWidth) / gridSize
           ),
           xIndex: new Attribute(i),
           yIndex: new Attribute(j),
@@ -310,8 +308,8 @@
   }
 
   function getMins(markset: MarkRenderGroup<FoodMark>): number[] {
-    let xMin: number = 10000000;
-    let yMin: number = 10000000;
+    let xMin: number = Number.MAX_SAFE_INTEGER;
+    let yMin: number = Number.MAX_SAFE_INTEGER;
     markset.map((mark) => {
       xMin = mark.attr("x") < xMin ? mark.attr("x") : xMin;
       yMin = mark.attr("y") < yMin ? mark.attr("y") : yMin;
@@ -320,35 +318,74 @@
     return [xMin, yMin];
   }
 
+  async function triggerSummaryView() {
+    console.log("summary view triggered");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const transform = d3.zoomTransform(canvas);
+    let animated = false;
+    let promise = new Promise((resolve, reject) => {
+      setTimeout(() => resolve("done!"), 2050);
+    });
+    if (ctx && transform) {
+      summarySet.forEach((mark) => {
+        // let marksToMove: MarkRenderGroup<FoodMark> = new MarkRenderGroup();
+        // renderedMarks.forEach((m) => {
+        //   if (mark.attr("marks").getMarks().includes(m)) marksToMove.addMark(m);
+        // });
+
+        // marksToMove
+        //   .animateTo("x", mark.attr("x"), { duration: 2000 })
+        //   .animateTo("y", mark.attr("y"), { duration: 2000 });
+        const { x, y, size } = mark.get();
+        const transformedX = Math.round(transform.applyX(x));
+        const transformedY = Math.round(transform.applyY(y));
+        mark
+          .attr("marks")
+          .filter((mark) => {
+            const x = transform.applyX(mark.attr("x"));
+            const y = transform.applyY(mark.attr("y"));
+            const size = 20;
+            return (
+              x + size >= 0 &&
+              y + size >= 0 &&
+              x - size <= canvas.clientWidth / 2 &&
+              y - size <= canvas.clientHeight / 2
+            );
+          })
+          .animate("x")
+          .animate("y")
+          .animateTo("x", mark.attr("x"), { duration: 2000 })
+          .animateTo("y", mark.attr("y"), { duration: 2000 });
+      });
+      await promise;
+      ctx.resetTransform();
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      currentView = "summary";
+      // foodSet
+      //   .update("x", (mark) => mark.attr("time"))
+      //   .update("y", (mark) => mark.attr("placeholder"));
+    }
+  }
+
   onMount(async () => {
     dataCSV = await d3.csv("src/datasets/food_data.csv");
     foodSet = new MarkRenderGroup(createMarkSet());
     foodSet.configure({ animationDuration: 500 });
     summarySet = createSummaryMarks();
+    summarySet.configure({ animationDuration: 1000 });
     await preloadImages(dataCSV, true);
     imageCanvas = document.createElement("canvas");
     imagesLoaded = true;
     setupCanvas();
   });
 
-  $: {
-    if (imagesLoaded) {
-      ticker = new Ticker([foodSet, scales]).onChange(() => {
-        requestAnimationFrame(drawFoodView);
-      });
-    }
-  }
-
-  $: {
-    if (imagesLoaded) {
-      requestAnimationFrame(drawFoodView);
-      createAxes();
-    }
-  }
-
-  $: if (canvas && foodSet && imagesLoaded) {
-    d3.select(canvas as Element).call(zoom);
-    requestAnimationFrame(drawFoodView);
+  $: if (imagesLoaded) {
+    ticker = new Ticker([foodSet, scales]).onChange(() => {
+      requestAnimationFrame(drawMarks);
+    });
+    requestAnimationFrame(drawMarks);
+    createAxes();
   }
 
   let scales = new Scales({ animationDuration: 500 })
@@ -371,12 +408,68 @@
     .on("zoom", (e) => {
       if (e.sourceEvent) {
         scales.transform(e.transform);
-        drawFoodView();
+        drawMarks();
       }
     });
 
   function createMarkSet(): Mark<FoodMark>[] {
     return dataCSV ? dataCSV.map((point) => createMark(point[""])) : [];
+  }
+
+  async function triggerFoodView() {
+    console.log("food view triggered");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const transform = d3.zoomTransform(canvas);
+    let animated = false;
+    let promise = new Promise((resolve, reject) => {
+      setTimeout(() => resolve("done!"), 2050);
+    });
+    if (ctx && transform) {
+      summarySet.forEach((mark) => {
+        // let marksToMove: MarkRenderGroup<FoodMark> = new MarkRenderGroup();
+        // renderedMarks.forEach((m) => {
+        //   if (mark.attr("marks").getMarks().includes(m)) marksToMove.addMark(m);
+        // });
+
+        // marksToMove
+        //   .animateTo("x", mark.attr("x"), { duration: 2000 })
+        //   .animateTo("y", mark.attr("y"), { duration: 2000 });
+        const { x, y, size } = mark.get();
+        const transformedX = Math.round(transform.applyX(x));
+        const transformedY = Math.round(transform.applyY(y));
+        mark
+          .attr("marks")
+          .update("x", () => mark.attr("x"))
+          .update("y", () => mark.attr("y"));
+      });
+
+      const visibleMarks = foodSet.filter((mark) => {
+        const x = transform.applyX(mark.attr("x"));
+        const y = transform.applyY(mark.attr("y"));
+        const size = 20;
+        return (
+          x + size >= 0 &&
+          y + size >= 0 &&
+          x - size <= canvas.clientWidth / 2 &&
+          y - size <= canvas.clientHeight / 2
+        );
+      });
+
+      visibleMarks
+        .animate("x")
+        .animate("y")
+        .animateTo("x", (m) => m.attr("time"), { duration: 2000 })
+        .animateTo("y", (m) => m.attr("placeholder"), { duration: 2000 });
+
+      await promise;
+      ctx.resetTransform();
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      currentView = "food";
+      // foodSet
+      //   .update("x", (mark) => mark.attr("time"))
+      //   .update("y", (mark) => mark.attr("placeholder"));
+    }
   }
 </script>
 
@@ -388,6 +481,14 @@
     <svg id="axes" style="position: absolute; left: 20%; width: 70%;"></svg>
     <canvas bind:this={canvas}></canvas>
   </div>
+  <button
+    on:click={triggerSummaryView}
+    style="position:absolute; top: 10%; left:10%;">Activate Summary View</button
+  >
+  <button
+    on:click={triggerFoodView}
+    style="position:absolute; top: 30%; left:10%;">Activate Food View</button
+  >
 </main>
 
 <style>
