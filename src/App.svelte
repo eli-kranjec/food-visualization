@@ -44,6 +44,9 @@
   let imageCanvas: HTMLCanvasElement;
   let currentView: "food" | "ingredients" | "summary" = "food";
   let drawTransitionBegun: boolean = false;
+  let animateOnlyVisibleMarks: boolean = false;
+  let sampleSize: number = 1000;
+  let renderLimit: number = 350;
 
   function preloadImages(
     dataCSV: d3.DSVRowArray,
@@ -99,8 +102,8 @@
 
   const createMark = (id: string): Mark<FoodMark> =>
     new Mark<FoodMark>(id, {
-      x: { value: 10000 * Math.random() },
-      y: { value: 10000 * Math.random() },
+      x: new Attribute(0),
+      y: new Attribute(0),
       img: { valueFn: () => imageCache[Number(id)] },
       ingredients: {
         valueFn: (mark) => {
@@ -119,7 +122,9 @@
     canvas.height = canvasHeight;
     imageCanvas.height = canvas.height;
     imageCanvas.width = canvas.width;
-    d3.select(canvas as Element).call(zoom);
+    d3.select(canvas as Element)
+      .on("click", handleClick)
+      .call(zoom);
     drawMarks();
   }
 
@@ -129,6 +134,7 @@
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
+    console.log(currentView);
     // let currentMarkGroup:
     //   | MarkRenderGroup<FoodMark>
     //   | MarkRenderGroup<SummaryMark> = foodSet;
@@ -153,7 +159,12 @@
           y - size <= canvas.clientHeight
         );
       });
-      if (visibleMarks.count() > 500 && !drawTransitionBegun) {
+      // if (visibleMarks.count() > 500 && !drawTransitionBegun) {
+      if (
+        visibleMarks.count() > renderLimit &&
+        !drawTransitionBegun &&
+        currentView === "food"
+      ) {
         triggerSummaryView();
         drawTransitionBegun = true;
       } else {
@@ -186,16 +197,20 @@
       ctx.resetTransform();
       ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      const zoomScale = transform.k; // Get the current zoom scale factor
+
       summarySet.forEach((mark) => {
         const { x, y, size } = mark.get();
         const transformedX = Math.round(transform.applyX(x));
         const transformedY = Math.round(transform.applyY(y));
+        const scaledSize = (zoomScale / size) * 20000; // Adjust size based on zoom scale
+
         ctx.fillStyle = "blue";
         ctx.beginPath();
         ctx.arc(
-          transformedX + size,
-          transformedY + size,
-          size,
+          transformedX + scaledSize,
+          transformedY + scaledSize,
+          scaledSize,
           0,
           Math.PI * 2,
           true
@@ -254,7 +269,7 @@
 
     const xScale = d3
       .scaleLinear()
-      .domain(scales.xScale.range())
+      .domain([0, 1000])
       .range([0, width - marginLeft - marginRight]);
 
     const yScale = d3
@@ -319,49 +334,51 @@
   }
 
   async function triggerSummaryView() {
-    console.log("summary view triggered");
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const transform = d3.zoomTransform(canvas);
-    let animated = false;
-    let promise = new Promise((resolve, reject) => {
-      setTimeout(() => resolve("done!"), 2050);
-    });
-    if (ctx && transform) {
-      summarySet.forEach((mark) => {
-        // let marksToMove: MarkRenderGroup<FoodMark> = new MarkRenderGroup();
-        // renderedMarks.forEach((m) => {
-        //   if (mark.attr("marks").getMarks().includes(m)) marksToMove.addMark(m);
-        // });
-
-        // marksToMove
-        //   .animateTo("x", mark.attr("x"), { duration: 2000 })
-        //   .animateTo("y", mark.attr("y"), { duration: 2000 });
-        const { x, y, size } = mark.get();
-        const transformedX = Math.round(transform.applyX(x));
-        const transformedY = Math.round(transform.applyY(y));
-        mark
-          .attr("marks")
-          .filter((mark) => {
-            const x = transform.applyX(mark.attr("x"));
-            const y = transform.applyY(mark.attr("y"));
-            const size = 20;
-            return (
-              x + size >= 0 &&
-              y + size >= 0 &&
-              x - size <= canvas.clientWidth / 2 &&
-              y - size <= canvas.clientHeight / 2
-            );
-          })
-          .animate("x")
-          .animate("y")
-          .animateTo("x", mark.attr("x"), { duration: 2000 })
-          .animateTo("y", mark.attr("y"), { duration: 2000 });
+    console.log(animateOnlyVisibleMarks);
+    if (currentView === "food") {
+      console.log("summary view triggered");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const transform = d3.zoomTransform(canvas);
+      let animated = false;
+      let promise = new Promise((resolve, reject) => {
+        setTimeout(() => resolve("done!"), 2050);
       });
+      if (ctx && transform) {
+        summarySet.forEach((mark) => {
+          // let marksToMove: MarkRenderGroup<FoodMark> = new MarkRenderGroup();
+          // renderedMarks.forEach((m) => {
+          //   if (mark.attr("marks").getMarks().includes(m)) marksToMove.addMark(m);
+          // });
+
+          // marksToMove
+          //   .animateTo("x", mark.attr("x"), { duration: 2000 })
+          //   .animateTo("y", mark.attr("y"), { duration: 2000 });
+          // const { x, y, size } = mark.get();
+          let animationMarks = animateOnlyVisibleMarks
+            ? mark.attr("marks").filter((m) => {
+                const x = transform.applyX(m.attr("x"));
+                const y = transform.applyY(m.attr("y"));
+                const size = 20;
+                return (
+                  x + size >= 0 &&
+                  y + size >= 0 &&
+                  x - size <= canvas.clientWidth / 2 &&
+                  y - size <= canvas.clientHeight / 2
+                );
+              })
+            : mark.attr("marks");
+
+          animationMarks
+            .animate("x")
+            .animate("y")
+            .animateTo("x", mark.attr("x"), { duration: 2000 })
+            .animateTo("y", mark.attr("y"), { duration: 2000 });
+        });
+      }
+
       await promise;
-      ctx.resetTransform();
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
       currentView = "summary";
+      drawMarks();
       // foodSet
       //   .update("x", (mark) => mark.attr("time"))
       //   .update("y", (mark) => mark.attr("placeholder"));
@@ -370,13 +387,32 @@
 
   onMount(async () => {
     dataCSV = await d3.csv("src/datasets/food_data.csv");
-    foodSet = new MarkRenderGroup(createMarkSet());
+    foodSet = new MarkRenderGroup(createMarkSet(sampleSize));
+    foodSet
+      .update("x", (m) => m.attr("time"))
+      .update("y", (m) => m.attr("placeholder"));
     foodSet.configure({ animationDuration: 500 });
     summarySet = createSummaryMarks();
     summarySet.configure({ animationDuration: 1000 });
     await preloadImages(dataCSV, true);
     imageCanvas = document.createElement("canvas");
     imagesLoaded = true;
+    let mins = getMins(foodSet);
+    let maxes = getMaxes(foodSet);
+    scales = new Scales({ animationDuration: 500 })
+      .xRange([mins[0], maxes[0]])
+      .yRange([mins[0], maxes[0]])
+      .onUpdate(() => {
+        const currentT = d3.zoomTransform(canvas);
+        const t = scales.transform();
+        if (t.k !== currentT.k || t.x !== currentT.x || t.y !== currentT.y) {
+          d3.select(canvas as Element).call(
+            zoom.transform,
+            new d3.ZoomTransform(t.k, t.x, t.y)
+          );
+          createAxes();
+        }
+      });
     setupCanvas();
   });
 
@@ -388,19 +424,7 @@
     createAxes();
   }
 
-  let scales = new Scales({ animationDuration: 500 })
-    .xRange([0, 500])
-    .yRange([0, 500])
-    .onUpdate(() => {
-      const currentT = d3.zoomTransform(canvas);
-      const t = scales.transform();
-      if (t.k !== currentT.k || t.x !== currentT.x || t.y !== currentT.y) {
-        d3.select(canvas as Element).call(
-          zoom.transform,
-          new d3.ZoomTransform(t.k, t.x, t.y)
-        );
-      }
-    });
+  let scales: Scales;
 
   const zoom = d3
     .zoom()
@@ -412,64 +436,146 @@
       }
     });
 
-  function createMarkSet(): Mark<FoodMark>[] {
-    return dataCSV ? dataCSV.map((point) => createMark(point[""])) : [];
+  function createMarkSet(size: number): Mark<FoodMark>[] {
+    if (!dataCSV) return [];
+
+    const shuffled = dataCSV.sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, size).map((point) => createMark(point[""]));
   }
 
   async function triggerFoodView() {
-    console.log("food view triggered");
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const transform = d3.zoomTransform(canvas);
-    let animated = false;
-    let promise = new Promise((resolve, reject) => {
-      setTimeout(() => resolve("done!"), 2050);
-    });
-    if (ctx && transform) {
-      summarySet.forEach((mark) => {
-        // let marksToMove: MarkRenderGroup<FoodMark> = new MarkRenderGroup();
-        // renderedMarks.forEach((m) => {
-        //   if (mark.attr("marks").getMarks().includes(m)) marksToMove.addMark(m);
-        // });
+    if (currentView === "summary") {
+      console.log("food view triggered");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const transform = d3.zoomTransform(canvas);
 
-        // marksToMove
-        //   .animateTo("x", mark.attr("x"), { duration: 2000 })
-        //   .animateTo("y", mark.attr("y"), { duration: 2000 });
-        const { x, y, size } = mark.get();
-        const transformedX = Math.round(transform.applyX(x));
-        const transformedY = Math.round(transform.applyY(y));
-        mark
-          .attr("marks")
-          .update("x", () => mark.attr("x"))
-          .update("y", () => mark.attr("y"));
-      });
+      if (ctx && transform) {
+        const visibleMarks = foodSet.filter((mark) => {
+          const x = transform.applyX(mark.attr("x"));
+          const y = transform.applyY(mark.attr("y"));
+          const size = 20;
+          return (
+            x + size >= 0 &&
+            y + size >= 0 &&
+            x - size <= canvas.clientWidth / 2 &&
+            y - size <= canvas.clientHeight / 2
+          );
+        });
+        if (visibleMarks.count() < renderLimit / 4) {
+          let promise = new Promise((resolve, reject) => {
+            setTimeout(() => resolve("done!"), 2050);
+          });
+          currentView = "food";
+          summarySet.forEach((mark) => {
+            mark
+              .attr("marks")
+              .update("x", (m) => m.attr("time"))
+              .update("y", (m) => m.attr("placeholder"));
+          });
+          let visibleSummarySet = summarySet.filter((mark) => {
+            const x = transform.applyX(mark.attr("x"));
+            const y = transform.applyY(mark.attr("y"));
+            const size = 20;
 
-      const visibleMarks = foodSet.filter((mark) => {
-        const x = transform.applyX(mark.attr("x"));
-        const y = transform.applyY(mark.attr("y"));
-        const size = 20;
-        return (
-          x + size >= 0 &&
-          y + size >= 0 &&
-          x - size <= canvas.clientWidth / 2 &&
-          y - size <= canvas.clientHeight / 2
-        );
-      });
+            return (
+              mark
+                .attr("marks")
+                .filter((m) => {
+                  const x = transform.applyX(m.attr("x"));
+                  const y = transform.applyY(m.attr("y"));
+                  const size = 20;
 
-      visibleMarks
-        .animate("x")
-        .animate("y")
-        .animateTo("x", (m) => m.attr("time"), { duration: 2000 })
-        .animateTo("y", (m) => m.attr("placeholder"), { duration: 2000 });
+                  return (
+                    x + size >= 0 &&
+                    y + size >= 0 &&
+                    x - size <= canvas.clientWidth / 2 &&
+                    y - size <= canvas.clientHeight / 2
+                  );
+                })
+                .count() > 0 ||
+              (x + size >= 0 &&
+                y + size >= 0 &&
+                x - size <= canvas.clientWidth / 2 &&
+                y - size <= canvas.clientHeight / 2)
+            );
+          });
 
-      await promise;
-      ctx.resetTransform();
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-      currentView = "food";
-      // foodSet
-      //   .update("x", (mark) => mark.attr("time"))
-      //   .update("y", (mark) => mark.attr("placeholder"));
+          visibleSummarySet.forEach((summaryMark) => {
+            const { x, y, marks } = summaryMark.get();
+            marks
+              .update(
+                "x",
+                x + (Math.random() * 5 * Math.random() < 0.5 ? -1 : 1)
+              )
+              .update(
+                "y",
+                y + (Math.random() * 5 * Math.random() < 0.5 ? -1 : 1)
+              );
+          });
+
+          visibleSummarySet.forEach((group) => {
+            group
+              .attr("marks")
+              .filter((mark) => {
+                const x = transform.applyX(mark.attr("x"));
+                const y = transform.applyY(mark.attr("y"));
+                const size = 40;
+                return (
+                  x + size >= 0 &&
+                  y + size >= 0 &&
+                  x - size <= canvas.clientWidth / 2 &&
+                  y - size <= canvas.clientHeight / 2
+                );
+              })
+              .animate("x")
+              .animate("y")
+              .animateTo("x", (m) => m.attr("time"), {
+                duration: 2000,
+              })
+              .animateTo("y", (m) => m.attr("placeholder"), {
+                duration: 2000,
+              });
+          });
+
+          await promise;
+        } else {
+          alert("zoom in more, too many marks to render"); // try to optimize code so that this isn't neccesary
+        }
+      }
     }
+  }
+
+  function handleClick(e: MouseEvent) {
+    const ctx = canvas.getContext("2d");
+
+    let mousePos = [
+      e.clientX - canvas.getBoundingClientRect().left,
+      e.clientY - canvas.getBoundingClientRect().top,
+    ];
+    if (ctx) {
+      if (currentView === "summary") {
+        const pixel = ctx.getImageData(mousePos[0], mousePos[1], 1, 1).data;
+        const color = `rgba(${pixel[0]}, ${pixel[1]}, ${pixel[2]}, ${pixel[3] / 255})`;
+
+        if (color === "rgba(0, 0, 255, 1)") {
+          triggerFoodView();
+          // add specified hit detection maybe?
+          // summarySet.filter((mark) => {
+          //   let { x, y, size } = mark.get();
+          //   return (
+          //     Math.sqrt((mousePos[0] - x) ** 2 + (mousePos[1] - y) ** 2) <= size
+          //   );
+          // });
+        } //might have to adjust based on color of summaryMarks (add adaptive?)
+        console.log(color);
+      } else if (currentView === "food") {
+      }
+    }
+  }
+
+  // placeholder/testing funcs
+  function changeAnimationSettings() {
+    animateOnlyVisibleMarks = !animateOnlyVisibleMarks;
   }
 </script>
 
@@ -489,6 +595,11 @@
     on:click={triggerFoodView}
     style="position:absolute; top: 30%; left:10%;">Activate Food View</button
   >
+  <button
+    on:click={changeAnimationSettings}
+    style="position:absolute; top: 40%; left:5%;"
+    >Change animation of visible marks
+  </button>
 </main>
 
 <style>
