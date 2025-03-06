@@ -47,11 +47,17 @@
   let foodPositionMap : PositionMap;
   let imagesLoaded: boolean = false;
   let imageCanvas: HTMLCanvasElement;
-  let currentView: "food" | "ingredients" | "summary" = "food";
+  let currentView: "food" | "ingredients" | "summary" | "frontPage" = "frontPage";
   let drawTransitionBegun: boolean = false;
   let animateOnlyVisibleMarks: boolean = false;
   let sampleSize: number = 200;
   let renderLimit: number = 201;
+  let searchBar: HTMLInputElement;
+  let ingredientBar : HTMLDivElement;
+  let selectedIngredients : String[] = new Array;
+
+
+
 
   function preloadImages(
     dataCSV: d3.DSVRowArray,
@@ -131,7 +137,7 @@
     d3.select(canvas as Element)
       .on("click", handleClick)
       .call(zoom);
-    drawMarks();
+    // drawMarks();
   }
 
   const drawMarks = () => {
@@ -186,18 +192,6 @@
             const transformedX = transform.applyX(x);
             const transformedY = transform.applyY(y);
             if (img.src && img.complete) {
-              ctx.fillStyle = "black";
-              ctx.font = "6px Arial";
-              ctx.fillText(
-                `(${transformedX}, ${transformedY})`,
-                transformedX + size + 25,
-                transformedY + size + -25
-              );
-              ctx.fillText(
-                `(${x}, ${y})`,
-                transformedX + size + 25,
-                transformedY + size + -15
-              );
               ctx.beginPath();
               ctx.arc(
                 transformedX + size,
@@ -473,7 +467,7 @@
       // .update("size", (m) => m.attr("ingredients").length);
     foodSet.configure({ animationDuration: 500 });
 
-    foodSet.forEach((m) => console.log(m.attr("name") + ", " + (m.attr("x") + ", " + m.attr("y"))));
+    // foodSet.forEach((m) => console.log(m.attr("name") + ", " + (m.attr("x") + ", " + m.attr("y"))));
     summarySet = createSummaryMarks();
     summarySet.configure({ animationDuration: 1000 });
     await preloadImages(dataCSV, true);
@@ -496,7 +490,64 @@
         if (!!summaryPositionMap) summaryPositionMap.invalidate();
         if (!!foodPositionMap) foodPositionMap.invalidate();
       });
+
     setupCanvas();
+
+    searchBar = document.getElementById("search-bar") as HTMLInputElement;
+    ingredientBar = document.getElementById("ingredient-bar") as HTMLDivElement;
+    let enteredIngredientsBox = document.getElementById("entered-ingredients-box") as HTMLDivElement;
+
+    searchBar.addEventListener('keydown', function(event) {
+    if (document.activeElement === searchBar && event.key === 'Enter') {
+    console.log("key down");
+    if (searchBar?.value) 
+    {
+      console.log("bar");
+      if (ingredientsArray.includes(searchBar.value.toLowerCase())) 
+      {
+        console.log("Ingredient found"); // add ingredient below search bar
+        searchBar.value = "";
+      } else 
+      {
+        console.log("Ingredient not found"); // add error message below search bar
+      }
+    }
+  }
+});
+
+  searchBar.addEventListener('input', function(event) {
+
+    let buttons = document.getElementsByName("ingredient-result-button");
+    
+    buttons.forEach(element => {
+      ingredientBar.removeChild(element);
+    });
+    let foundIngredients = ingredientsArray.filter(e => e.includes(searchBar.value));
+
+    if (foundIngredients.length < 10) {
+      foundIngredients.forEach(element => {
+      let result = document.createElement('button');
+      result.name = "ingredient-result-button";
+      result.textContent = String(element);
+      result.onclick = () => {
+        let b = document.createElement('button');
+        b.textContent = String(element) + " added to list";
+        b.classList.add('result-added-button');
+        b.style.backgroundColor = "red";
+        b.style.position = "absoulte";
+        selectedIngredients.push(element);
+        ingredientBar.removeChild(result);
+        enteredIngredientsBox.appendChild(b);
+        
+      };
+
+      ingredientBar.appendChild(result);
+    });
+    }
+  })
+
+
+
   });
 
   $: if (imagesLoaded) {
@@ -699,20 +750,23 @@
     
     if (clickedMark) {
       console.log("Food item:", clickedMark.attr("name"));
-      console.log(
-        "Position difference:",
-        dataX - clickedMark.attr("x"),
-        dataY - clickedMark.attr("y")
-      );
-      
-      // Optionally, display information about the clicked food mark
-      const infoElement = document.getElementById("food-info");
-      if (infoElement) {
-        infoElement.innerHTML = `
-          <h3>${clickedMark.attr("name")}</h3>
-          <p>Ingredients: ${clickedMark.attr("ingredients").join(", ")}</p>
-        `;
-      }
+      let clickedMarkDisplayBox = document.getElementById("clicked-mark-box");
+      if (clickedMarkDisplayBox) {
+        clickedMarkDisplayBox.innerHTML = " ";
+
+        let imgSrc = clickedMark.attr('img').src;
+        let img = document.createElement('img');
+        let p = document.createElement('p');
+        let textNode = document.createTextNode("Clicked Recipe : " + clickedMark.attr("name"));
+        p.appendChild(textNode);
+        img.src = imgSrc;
+        img.width /= 2;
+        img.height /= 2;
+
+        clickedMarkDisplayBox.appendChild(img);
+        clickedMarkDisplayBox.appendChild(p);
+
+      } 
     }
   }
 }
@@ -723,9 +777,19 @@
   function changeAnimationSettings() {
     animateOnlyVisibleMarks = !animateOnlyVisibleMarks;
   }
+
+  function frontPage() : boolean {
+    return currentView === "frontPage";
+  }
+
+  function foodView() : boolean {
+    return currentView === "food";
+  }
+
 </script>
 
 <main>
+<div hidden={!foodView}>
   <div id="visualization-box">
     {#key imagesLoaded}
       <div class="loading-screen" hidden={imagesLoaded}>Loading...</div>
@@ -746,7 +810,24 @@
     style="position:absolute; top: 40%; left:5%;"
     >Change animation of visible marks
   </button>
-</main>
+
+  <div id="clicked-mark-box" style="position:absolute; top: 50%; left:1%; width: 50px;"></div>
+
+  <div id="ingredient-bar" style="position:absolute; top: 60%; right:0.01%; width: 150px;">
+    <input id="search-bar" type="text" placeholder="Enter an ingredient...">
+    <div id="entered-ingredients-box"></div>
+    </div>
+  </div>
+
+  <div class="front-page" hidden={!frontPage} style="z-index: 11;">
+    <head>
+      <h1>Welcome to FoodTable!</h1>
+      <h2>Enter your ingredients to begin!</h2>
+      <button on:click={triggerFoodView}>Enter the tool</button>
+    </head>
+  </div>
+
+  </main>
 
 <style>
   main {
@@ -756,7 +837,7 @@
     margin: 0 auto;
   }
   canvas {
-    z-index: 10;
+    z-index: 5;
     image-rendering: optimizeSpeed;
   }
   .loading-screen {
@@ -769,4 +850,19 @@
     bottom: 5%;
     left: 30%;
   }
+
+  #entered-ingredients-box {
+    position: absolute;  /* Position it above #searchBar */
+      top: -100px;          /* Positioned above the search bar */
+      left: 0;
+      right: 0;
+      padding: 10px;
+      display: flex;
+      flex-direction: column-reverse; /* Flexbox to make elements go up */
+      gap: 10px;
+      height: 50px;
+      width: 200px;
+  }
+
+  
 </style>
