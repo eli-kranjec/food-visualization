@@ -55,6 +55,7 @@
   let searchBar: HTMLInputElement;
   let ingredientBar : HTMLDivElement;
   let selectedIngredients : String[] = new Array;
+  let fromFrontPage = true;
 
 
 
@@ -457,7 +458,8 @@
     }
   }
 
-  onMount(async () => {
+
+async function initVisualization () {
     dataCSV = await d3.csv("src/datasets/food_data.csv");
     foodSet = new MarkRenderGroup(createMarkSet(sampleSize));
     foodSet
@@ -548,7 +550,7 @@
 
 
 
-  });
+  }
 
   $: if (imagesLoaded) {
     ticker = new Ticker([foodSet, scales]).onChange(() => {
@@ -605,6 +607,11 @@
   }
 
   async function triggerFoodView() {
+    if (fromFrontPage) 
+    {
+      initVisualization();
+      fromFrontPage = false;
+    }
     if (currentView === "summary") {
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       const transform = d3.zoomTransform(canvas);
@@ -823,12 +830,10 @@
 
   {#if frontPage()}
   <div class="front-page" style="z-index: 11;">
-    <head>
       <h1>Welcome to FoodTable!</h1>
       <h2>Enter your ingredients to begin!</h2>
       <button on:click={triggerFoodView}>Enter the tool</button>
-    </head>
-  </div>
+      </div>
   {/if}
 
   </main>
