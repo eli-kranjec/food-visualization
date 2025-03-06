@@ -789,7 +789,8 @@
 </script>
 
 <main>
-<div hidden={!foodView}>
+{#if foodView()}
+<div>
   <div id="visualization-box">
     {#key imagesLoaded}
       <div class="loading-screen" hidden={imagesLoaded}>Loading...</div>
@@ -818,14 +819,17 @@
     <div id="entered-ingredients-box"></div>
     </div>
   </div>
+  {/if}
 
-  <div class="front-page" hidden={!frontPage} style="z-index: 11;">
+  {#if frontPage()}
+  <div class="front-page" style="z-index: 11;">
     <head>
       <h1>Welcome to FoodTable!</h1>
       <h2>Enter your ingredients to begin!</h2>
       <button on:click={triggerFoodView}>Enter the tool</button>
     </head>
   </div>
+  {/if}
 
   </main>
 
