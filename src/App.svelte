@@ -21,6 +21,7 @@
     size: Attribute<number>;
     time: Attribute<number>;
     placeholder: Attribute<number>;
+    name: Attribute<string>;
   };
 
   type SummaryMark = {
@@ -32,8 +33,8 @@
     marks: Attribute<MarkRenderGroup<FoodMarkAttrs>>;
   };
 
-  let canvasHeight: number = 900;
-  let canvasWidth: number = 1200;
+  let canvasHeight: number = 650;
+  let canvasWidth: number = 900;
   let gridSize: number = 5;
 
   let dataCSV: d3.DSVRowArray;
@@ -43,13 +44,14 @@
   let summarySet: MarkRenderGroup<SummaryMark>;
   let imageCache: Record<string, HTMLImageElement> = {};
   let summaryPositionMap: PositionMap;
+  let foodPositionMap : PositionMap;
   let imagesLoaded: boolean = false;
   let imageCanvas: HTMLCanvasElement;
   let currentView: "food" | "ingredients" | "summary" = "food";
   let drawTransitionBegun: boolean = false;
   let animateOnlyVisibleMarks: boolean = false;
-  let sampleSize: number = 500;
-  let renderLimit: number = 250;
+  let sampleSize: number = 200;
+  let renderLimit: number = 201;
 
   function preloadImages(
     dataCSV: d3.DSVRowArray,
@@ -116,8 +118,9 @@
         },
       },
       size: new Attribute(0),
-      time: { value: 10000 * Math.random() },
-      placeholder: { value: 10000 * Math.random() },
+      time: { value: 1000 * Math.random() },
+      placeholder: { value: 1000 * Math.random() },
+      name: {value: dataCSV[Number(id)]?.Title ?? "No Name"},
     });
 
   function setupCanvas() {
@@ -137,6 +140,7 @@
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
+
     // let currentMarkGroup:
     //   | MarkRenderGroup<FoodMarkAttrs>
     //   | MarkRenderGroup<SummaryMark> = foodSet;
@@ -150,6 +154,7 @@
 
     const transform = d3.zoomTransform(canvas);
     if (currentView === "food") {
+      foodPositionMap.invalidate();
       const visibleMarks = foodSet.filter((mark) => {
         const x = transform.applyX(mark.attr("x"));
         const y = transform.applyY(mark.attr("y"));
@@ -178,9 +183,21 @@
           ctx.save();
           group.forEach((mark) => {
             const { x, y, img, size } = mark.get();
-            const transformedX = Math.round(transform.applyX(x));
-            const transformedY = Math.round(transform.applyY(y));
+            const transformedX = transform.applyX(x);
+            const transformedY = transform.applyY(y);
             if (img.src && img.complete) {
+              ctx.fillStyle = "black";
+              ctx.font = "6px Arial";
+              ctx.fillText(
+                `(${transformedX}, ${transformedY})`,
+                transformedX + size + 25,
+                transformedY + size + -25
+              );
+              ctx.fillText(
+                `(${x}, ${y})`,
+                transformedX + size + 25,
+                transformedY + size + -15
+              );
               ctx.beginPath();
               ctx.arc(
                 transformedX + size,
@@ -198,13 +215,14 @@
                 transformedY,
                 size * 2,
                 size * 2
-              );
+              );              
             }
           });
           ctx.restore();
         });
       }
     } else if (currentView === "summary") {
+      summaryPositionMap.invalidate();
       ctx.resetTransform();
       ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
@@ -212,8 +230,8 @@
 
       summarySet.forEach((mark) => {
         const { x, y, size } = mark.get();
-        const transformedX = Math.round(transform.applyX(x));
-        const transformedY = Math.round(transform.applyY(y));
+        const transformedX = transform.applyX(x);
+        const transformedY = transform.applyY(y);
         const scaledSize = (zoomScale / size) * 20000; // Adjust size based on zoom scale
 
         ctx.fillStyle = "blue";
@@ -304,7 +322,6 @@
     xScale: d3.ScaleLinear<number, number, never>,
     yScale: d3.ScaleLinear<number, number, never>
   ) => {
-    console.log("drawing axes");
     const svg = d3.select("#axes");
     const marginTop = 60,
       marginRight = 60,
@@ -452,8 +469,11 @@
     foodSet
       .update("x", (m) => m.attr("time"))
       .update("y", (m) => m.attr("placeholder"))
-      .update("size", (m) => m.attr("ingredients").length);
+      .update("size", (m) => 20);
+      // .update("size", (m) => m.attr("ingredients").length);
     foodSet.configure({ animationDuration: 500 });
+
+    foodSet.forEach((m) => console.log(m.attr("name") + ", " + (m.attr("x") + ", " + m.attr("y"))));
     summarySet = createSummaryMarks();
     summarySet.configure({ animationDuration: 1000 });
     await preloadImages(dataCSV, true);
@@ -474,6 +494,7 @@
           );
         }
         if (!!summaryPositionMap) summaryPositionMap.invalidate();
+        if (!!foodPositionMap) foodPositionMap.invalidate();
       });
     setupCanvas();
   });
@@ -483,13 +504,25 @@
       requestAnimationFrame(drawMarks);
     });
     summaryPositionMap = new PositionMap({
-      maximumHitTestDistance: 100000,
+      maximumHitTestDistance: 20,
     }).add(summarySet);
     requestAnimationFrame(drawMarks);
     createAxes(
       d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000]),
       d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
     );
+
+    foodPositionMap = new PositionMap({
+      maximumHitTestDistance: 20,
+    }).add(foodSet);
+    foodSet.configure({
+      hitTest: (mark, location) => {
+        let x = mark.attr('x');
+        let y = mark.attr('y');
+        let r = mark.attr('size');
+        return Math.sqrt(Math.pow(x - location[0], 2.0) + Math.pow(y - location[1], 2.0)) <= r;
+      }
+    })
   }
 
   let scales: Scales;
@@ -619,37 +652,72 @@
     }
   }
 
-  function handleClick(e: MouseEvent) {
-    const ctx = canvas.getContext("2d");
-    type position = [number, number];
+  function handleClick(event: MouseEvent) {
+    const rect = canvas.getBoundingClientRect();
+    // let xRange = (450 + 19);
+    // let yRange = (17 - 311);
+
+    const X_SCALAR = 0.5;
+    const Y_SCALAR = 0.5;
+
+
+    const scaleX = (canvas.width / rect.width);
+    const scaleY = canvas.height / rect.height;
+
+  
+    const canvasX = (((event.clientX  - rect.left) * X_SCALAR) - 19.76) * scaleX;
+    const canvasY = (((event.clientY - rect.bottom) * Y_SCALAR) + 305) * scaleY;
+  
     const transform = d3.zoomTransform(canvas);
-    const zoomScale = transform.k;
+    const [dataX, dataY] = transform.invert([canvasX, canvasY]);
+  
+    console.log("Canvas coordinates:", [canvasX, canvasY]);
+    //console.log("Data coordinates:", [dataX, dataY]);
 
-    let mousePos: position = [
-      e.clientX - canvas.getBoundingClientRect().left,
-      e.clientY - canvas.getBoundingClientRect().top,
-    ];
-    if (ctx) {
-      if (currentView === "summary") {
-        const pixel = ctx.getImageData(mousePos[0], mousePos[1], 1, 1).data;
-        const color = `rgba(${pixel[0]}, ${pixel[1]}, ${pixel[2]}, ${pixel[3] / 255})`;
-        if (color === "rgba(0, 0, 255, 1)") {
-          // zooming code (not functional)
-          let clickedMark: Mark<SummaryMark> | null =
-            summaryPositionMap.hitTest(mousePos);
-          let markPos = [clickedMark?.attr("x"), clickedMark?.attr("x")];
-          if (clickedMark) {
-            scales.zoomTo(
-              markBox(summarySet.filter((m) => m == clickedMark).getMarks())
-            );
-          }
-
+    // Depending on the current view, use the appropriate PositionMap for hit testing
+    if (currentView === "summary") {
+      const clickedMark = summaryPositionMap.hitTest([dataX, dataY]);
+    
+      if (clickedMark) {
+        console.log("Clicked summary mark:", clickedMark);
+      
+        // Get the marks contained within the summary mark
+        const containedMarks = clickedMark.attr("marks");
+        // Calculate the bounding box of these marks to zoom to
+        const markBBox = markBox(containedMarks.getMarks());
+      
+        // Zoom to this area with some padding
+        scales.zoomTo(markBBox);
+      
+        // Switch to food view after zoom animation completes
+        setTimeout(() => {
           triggerFoodView();
-        } //might have to adjust based on color of summaryMarks (add adaptive?)
-      } else if (currentView === "food") {
+        }, 1200);
+    }
+  } else if (currentView === "food") {
+    const clickedMark = foodPositionMap.hitTest([dataX, dataY]);
+    
+    if (clickedMark) {
+      console.log("Food item:", clickedMark.attr("name"));
+      console.log(
+        "Position difference:",
+        dataX - clickedMark.attr("x"),
+        dataY - clickedMark.attr("y")
+      );
+      
+      // Optionally, display information about the clicked food mark
+      const infoElement = document.getElementById("food-info");
+      if (infoElement) {
+        infoElement.innerHTML = `
+          <h3>${clickedMark.attr("name")}</h3>
+          <p>Ingredients: ${clickedMark.attr("ingredients").join(", ")}</p>
+        `;
       }
     }
   }
+}
+
+
 
   // placeholder/testing funcs
   function changeAnimationSettings() {
@@ -663,7 +731,7 @@
       <div class="loading-screen" hidden={imagesLoaded}>Loading...</div>
     {/key}
     <svg id="axes" style="position: absolute; left: 20%; width: 70%;"></svg>
-    <canvas bind:this={canvas}></canvas>
+    <canvas bind:this={canvas} style="position:absolute; left: 25%;"></canvas>
   </div>
   <button
     on:click={triggerSummaryView}
