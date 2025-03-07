@@ -55,6 +55,7 @@
   let ingredientBar : HTMLDivElement;
   let selectedIngredients : String[] = new Array;
   let fromFrontPage = true;
+  let ingredientCheckbox : HTMLInputElement | null;
 
   onMount(() => {
   if (canvas) {
@@ -74,13 +75,10 @@
   if (searchBar) {
     searchBar.addEventListener('keydown', function(event) {
       if (document.activeElement === searchBar && event.key === 'Enter') {
-        console.log("key down");
         if (searchBar?.value) 
         {
-          console.log("bar");
           if (ingredientsArray.includes(searchBar.value.toLowerCase())) 
           {
-            console.log("Ingredient found"); 
             searchBar.value = "";
           } else 
           {
@@ -119,6 +117,59 @@
       }
     });
   }
+
+  let searchBarFront = document.getElementById("search-bar-front") as HTMLInputElement;
+  let ingredientBarFront = document.getElementById("ingredient-bar-front") as HTMLDivElement;
+  let enteredIngredientsBoxFront = document.getElementById("entered-ingredients-box-front") as HTMLDivElement;
+  ingredientCheckbox = document.getElementById("ingredient-checkbox") as HTMLInputElement;
+
+  if (searchBarFront) {
+    searchBarFront.addEventListener('keydown', function(event) {
+      if (document.activeElement === searchBarFront && event.key === 'Enter') {
+        if (searchBarFront?.value) 
+        {
+          if (ingredientsArray.includes(searchBarFront.value.toLowerCase())) 
+          {
+            searchBar.value = "";
+          } else 
+          {
+            console.log("Ingredient not found");
+          }
+        }
+      }
+    });
+
+    searchBar.addEventListener('input', function(event) {
+      let buttons = document.getElementsByName("ingredient-result-button");
+      
+      buttons.forEach(element => {
+        ingredientBar.removeChild(element);
+      });
+      let foundIngredients = ingredientsArray.filter(e => e.includes(searchBarFront.value));
+
+      if (foundIngredients.length < 10) {
+        foundIngredients.forEach(element => {
+          let result = document.createElement('button');
+          result.name = "ingredient-result-button";
+          result.textContent = String(element);
+          result.onclick = () => {
+            let b = document.createElement('button');
+            b.textContent = String(element) + " added to list";
+            b.classList.add('result-added-button');
+            b.style.backgroundColor = "red";
+            b.style.position = "absoulte";
+            selectedIngredients.push(element);
+            ingredientBar.removeChild(result);
+            enteredIngredientsBoxFront.appendChild(b);
+          };
+
+          ingredientBarFront.appendChild(result);
+        });
+      }
+    });
+  }
+
+
 });
 
 
@@ -554,6 +605,7 @@ const drawMarks = () => {
   }
     
   foodSet = new MarkRenderGroup(createMarkSet(sampleSize));
+  // foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, ingredientCheckbox.checked));
   foodSet
     .update("x", (m) => m.attr("time"))
     .update("y", (m) => m.attr("placeholder"))
@@ -671,6 +723,23 @@ const drawMarks = () => {
 
     const shuffled = dataCSV.sort(() => Math.random() - 0.5);
     return shuffled.slice(0, size).map((point) => createMark(point[""]));
+  }
+
+  function createSortedSet(ingredientList: string[], includeOnlyFullRecipes: boolean) : Mark<FoodMarkAttrs>[]
+  {
+      return dataCSV.sort((point) => {
+        if (includeOnlyFullRecipes) {
+          if (point.ingredients.split(',').every(elm => ingredientList.some(str => elm.includes(str)))) {
+            createMark(point[""]);
+          }
+          
+        } else {
+          if (point.ingredients.split(',').some(elm => ingredientList.some(str => elm.includes(str)))) {
+            createMark(point[""]);
+          }
+        }
+      });
+    
   }
 
   async function triggerFoodView() {
@@ -899,11 +968,11 @@ const drawMarks = () => {
       >Change animation of visible marks
     </button>
 
-    <div id="clicked-mark-box-front" style="position:absolute; top: 50%; left:1%; width: 50px;"></div>
+    <div id="clicked-mark-box" style="position:absolute; top: 50%; left:1%; width: 50px;"></div>
 
-    <div id="ingredient-bar-front" style="position:absolute; top: 60%; right:0.01%; width: 150px;">
-      <input id="search-bar-front" type="text" placeholder="Enter more ingredients...">
-      <div id="entered-ingredients-box-front"></div>
+    <div id="ingredient-bar" style="position:absolute; top: 60%; right:0.01%; width: 150px;">
+      <input id="search-bar" type="text" placeholder="Enter more ingredients...">
+      <div id="entered-ingredients-box"></div>
     </div>
   {/if}
 
@@ -911,11 +980,12 @@ const drawMarks = () => {
     <div class="front-page" style="z-index: 11;">
       <h1>Welcome to FoodTable!</h1>
       <h2>Click the button below to enter (will add more to this page dw)</h2>
-      <div id="ingredient-bar">
+      <div id="ingredient-bar-front">
         <input id="search-bar-front" type="text" placeholder="Enter an ingredient...">
-        <div id="entered-ingredients-box"></div>
+        <div id="entered-ingredients-box-front"></div>
       </div>
       <button on:click={triggerFoodView}>Enter the tool</button>
+      <p>Only include recipes that all ingredients are entered for?</p><input id="ingredient-checkbox" type="checkbox">
     </div>
   {/if}
 </main>
