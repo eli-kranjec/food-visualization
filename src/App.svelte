@@ -46,7 +46,6 @@
   let summaryPositionMap: PositionMap;
   let foodPositionMap : PositionMap;
   let imagesLoaded: boolean = false;
-  let imageCanvas: HTMLCanvasElement;
   let currentView: "food" | "ingredients" | "summary" | "frontPage" = "frontPage";
   let drawTransitionBegun: boolean = false;
   let animateOnlyVisibleMarks: boolean = false;
@@ -57,6 +56,70 @@
   let selectedIngredients : String[] = new Array;
   let fromFrontPage = true;
 
+  onMount(() => {
+  if (canvas) {
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    
+    
+    d3.select(canvas as Element)
+      .on("click", handleClick)
+      .call(zoom);
+  }
+  
+  searchBar = document.getElementById("search-bar") as HTMLInputElement;
+  ingredientBar = document.getElementById("ingredient-bar") as HTMLDivElement;
+  let enteredIngredientsBox = document.getElementById("entered-ingredients-box") as HTMLDivElement;
+
+  if (searchBar) {
+    searchBar.addEventListener('keydown', function(event) {
+      if (document.activeElement === searchBar && event.key === 'Enter') {
+        console.log("key down");
+        if (searchBar?.value) 
+        {
+          console.log("bar");
+          if (ingredientsArray.includes(searchBar.value.toLowerCase())) 
+          {
+            console.log("Ingredient found"); 
+            searchBar.value = "";
+          } else 
+          {
+            console.log("Ingredient not found");
+          }
+        }
+      }
+    });
+
+    searchBar.addEventListener('input', function(event) {
+      let buttons = document.getElementsByName("ingredient-result-button");
+      
+      buttons.forEach(element => {
+        ingredientBar.removeChild(element);
+      });
+      let foundIngredients = ingredientsArray.filter(e => e.includes(searchBar.value));
+
+      if (foundIngredients.length < 10) {
+        foundIngredients.forEach(element => {
+          let result = document.createElement('button');
+          result.name = "ingredient-result-button";
+          result.textContent = String(element);
+          result.onclick = () => {
+            let b = document.createElement('button');
+            b.textContent = String(element) + " added to list";
+            b.classList.add('result-added-button');
+            b.style.backgroundColor = "red";
+            b.style.position = "absoulte";
+            selectedIngredients.push(element);
+            ingredientBar.removeChild(result);
+            enteredIngredientsBox.appendChild(b);
+          };
+
+          ingredientBar.appendChild(result);
+        });
+      }
+    });
+  }
+});
 
 
 
@@ -130,122 +193,145 @@
       name: {value: dataCSV[Number(id)]?.Title ?? "No Name"},
     });
 
-  function setupCanvas() {
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-    imageCanvas.height = canvas.height;
-    imageCanvas.width = canvas.width;
-    d3.select(canvas as Element)
-      .on("click", handleClick)
-      .call(zoom);
-    // drawMarks();
+    function setupCanvas() {
+  console.log("Setting up canvas");
+  
+  if (!canvas) {
+    console.error("Canvas element not found");
+    return;
+  }
+  
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  
+  
+  d3.select(canvas as Element)
+    .on("click", handleClick)
+    .call(zoom);
+  
+  console.log("Canvas setup complete");
+}
+
+const drawMarks = () => {
+  console.log("Drawing marks in view:", currentView);
+  
+  if (!dataCSV || !canvas) {
+    console.log("Missing data or canvas for drawing");
+    return;
   }
 
-  const drawMarks = () => {
-    if (!dataCSV || !canvas) return;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) {
+    console.error("Could not get canvas context");
+    return;
+  }
 
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return;
-
-
-    // let currentMarkGroup:
-    //   | MarkRenderGroup<FoodMarkAttrs>
-    //   | MarkRenderGroup<SummaryMark> = foodSet;
-
-    // switch (currentView) {
-    //   case "food":
-    //     currentMarkGroup = foodSet;
-    //   case "summary":
-    //     currentMarkGroup = summarySet;
-    // }
-
-    const transform = d3.zoomTransform(canvas);
-    if (currentView === "food") {
-      foodPositionMap.invalidate();
-      const visibleMarks = foodSet.filter((mark) => {
-        const x = transform.applyX(mark.attr("x"));
-        const y = transform.applyY(mark.attr("y"));
-        const size = mark.attr("size");
-        return (
-          x + size >= 0 &&
-          y + size >= 0 &&
-          x + size <= canvas.clientWidth &&
-          y + size <= canvas.clientHeight
-        );
-      });
-      // if (visibleMarks.count() > 500 && !drawTransitionBegun) {
-      if (
-        visibleMarks.count() > renderLimit &&
-        !drawTransitionBegun &&
-        currentView === "food"
-      ) {
-        triggerSummaryView();
-        drawTransitionBegun = true;
-      } else {
-        const groupedMarks = groupMarks(visibleMarks);
-        ctx.resetTransform();
-        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-        ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-        groupedMarks.forEach((group) => {
-          ctx.save();
-          group.forEach((mark) => {
-            const { x, y, img, size } = mark.get();
-            const transformedX = transform.applyX(x);
-            const transformedY = transform.applyY(y);
-            if (img.src && img.complete) {
-              ctx.beginPath();
-              ctx.arc(
-                transformedX + size,
-                transformedY + size,
-                size,
-                0,
-                Math.PI * 2,
-                true
-              );
-              ctx.closePath();
-              ctx.clip();
-              ctx.drawImage(
-                img,
-                transformedX,
-                transformedY,
-                size * 2,
-                size * 2
-              );              
-            }
-          });
-          ctx.restore();
-        });
-      }
-    } else if (currentView === "summary") {
-      summaryPositionMap.invalidate();
+  const transform = d3.zoomTransform(canvas);
+  if (currentView === "food") {
+    if (foodPositionMap) foodPositionMap.invalidate();
+    
+    const visibleMarks = foodSet.filter((mark) => {
+      const x = transform.applyX(mark.attr("x"));
+      const y = transform.applyY(mark.attr("y"));
+      const size = mark.attr("size");
+      return (
+        x + size >= 0 &&
+        y + size >= 0 &&
+        x + size <= canvas.clientWidth &&
+        y + size <= canvas.clientHeight
+      );
+    });
+    
+    if (
+      visibleMarks.count() > renderLimit &&
+      !drawTransitionBegun &&
+      currentView === "food"
+    ) {
+      console.log("Too many marks visible, triggering summary view");
+      triggerSummaryView();
+      drawTransitionBegun = true;
+    } else {
+      const groupedMarks = groupMarks(visibleMarks);
       ctx.resetTransform();
       ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-      const zoomScale = transform.k; // Get the current zoom scale factor
-
-      summarySet.forEach((mark) => {
-        const { x, y, size } = mark.get();
-        const transformedX = transform.applyX(x);
-        const transformedY = transform.applyY(y);
-        const scaledSize = (zoomScale / size) * 20000; // Adjust size based on zoom scale
-
-        ctx.fillStyle = "blue";
-        ctx.beginPath();
-        ctx.arc(
-          transformedX + scaledSize,
-          transformedY + scaledSize,
-          scaledSize,
-          0,
-          Math.PI * 2,
-          true
-        );
-        ctx.fill();
-        ctx.closePath();
+      
+      console.log("Drawing", groupedMarks.length, "mark groups");
+      
+      groupedMarks.forEach((group) => {
+        ctx.save();
+        group.forEach((mark) => {
+          const { x, y, img, size } = mark.get();
+          const transformedX = transform.applyX(x);
+          const transformedY = transform.applyY(y);
+          if (img && img.src && img.complete) {
+            ctx.beginPath();
+            ctx.arc(
+              transformedX + size,
+              transformedY + size,
+              size,
+              0,
+              Math.PI * 2,
+              true
+            );
+            ctx.closePath();
+            ctx.clip();
+            ctx.drawImage(
+              img,
+              transformedX,
+              transformedY,
+              size * 2,
+              size * 2
+            );              
+          } else {
+            ctx.beginPath();
+            ctx.arc(
+              transformedX + size,
+              transformedY + size,
+              size,
+              0,
+              Math.PI * 2,
+              true
+            );
+            ctx.fillStyle = "lightgray";
+            ctx.fill();
+            ctx.closePath();
+          }
+        });
+        ctx.restore();
       });
-
-      drawTransitionBegun = false;
     }
-  };
+  } else if (currentView === "summary") {
+    if (summaryPositionMap) summaryPositionMap.invalidate();
+    
+    ctx.resetTransform();
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    const zoomScale = transform.k;  
+
+    summarySet.forEach((mark) => {
+      const { x, y, size } = mark.get();
+      const transformedX = transform.applyX(x);
+      const transformedY = transform.applyY(y);
+      const scaledSize = (zoomScale / size) * 20000; 
+
+      ctx.fillStyle = "blue";
+      ctx.beginPath();
+      ctx.arc(
+        transformedX + scaledSize,
+        transformedY + scaledSize,
+        scaledSize,
+        0,
+        Math.PI * 2,
+        true
+      );
+      ctx.fill();
+      ctx.closePath();
+    });
+
+    drawTransitionBegun = false;
+  }
+}
 
   const groupMarks = (marks: MarkRenderGroup<FoodMarkAttrs>) => {
     const groupSize = 100;
@@ -459,98 +545,79 @@
   }
 
 
-async function initVisualization () {
-    dataCSV = await d3.csv("src/datasets/food_data.csv");
-    foodSet = new MarkRenderGroup(createMarkSet(sampleSize));
-    foodSet
-      .update("x", (m) => m.attr("time"))
-      .update("y", (m) => m.attr("placeholder"))
-      .update("size", (m) => 20);
-      // .update("size", (m) => m.attr("ingredients").length);
-    foodSet.configure({ animationDuration: 500 });
-
-    // foodSet.forEach((m) => console.log(m.attr("name") + ", " + (m.attr("x") + ", " + m.attr("y"))));
-    summarySet = createSummaryMarks();
-    summarySet.configure({ animationDuration: 1000 });
-    await preloadImages(dataCSV, true);
-    imageCanvas = document.createElement("canvas");
-    imagesLoaded = true;
-    let mins = getMins(foodSet);
-    let maxes = getMaxes(foodSet);
-    scales = new Scales({ animationDuration: 500 })
-      .xRange([mins[0], maxes[0]])
-      .yRange([mins[0], maxes[0]])
-      .onUpdate(() => {
-        const currentT = d3.zoomTransform(canvas);
-        const t = scales.transform();
-        if (t.k !== currentT.k || t.x !== currentT.x || t.y !== currentT.y) {
-          d3.select(canvas as Element).call(
-            zoom.transform,
-            new d3.ZoomTransform(t.k, t.x, t.y)
-          );
-        }
-        if (!!summaryPositionMap) summaryPositionMap.invalidate();
-        if (!!foodPositionMap) foodPositionMap.invalidate();
-      });
-
-    setupCanvas();
-
-    searchBar = document.getElementById("search-bar") as HTMLInputElement;
-    ingredientBar = document.getElementById("ingredient-bar") as HTMLDivElement;
-    let enteredIngredientsBox = document.getElementById("entered-ingredients-box") as HTMLDivElement;
-
-    searchBar.addEventListener('keydown', function(event) {
-    if (document.activeElement === searchBar && event.key === 'Enter') {
-    console.log("key down");
-    if (searchBar?.value) 
-    {
-      console.log("bar");
-      if (ingredientsArray.includes(searchBar.value.toLowerCase())) 
-      {
-        console.log("Ingredient found"); // add ingredient below search bar
-        searchBar.value = "";
-      } else 
-      {
-        console.log("Ingredient not found"); // add error message below search bar
-      }
-    }
+  async function initVisualization() {
+  console.log("Initializing visualization with data:", dataCSV ? "loaded" : "not loaded");
+  
+  if (!dataCSV) {
+    console.error("Cannot initialize visualization: data not loaded");
+    return;
   }
-});
-
-  searchBar.addEventListener('input', function(event) {
-
-    let buttons = document.getElementsByName("ingredient-result-button");
     
-    buttons.forEach(element => {
-      ingredientBar.removeChild(element);
-    });
-    let foundIngredients = ingredientsArray.filter(e => e.includes(searchBar.value));
+  foodSet = new MarkRenderGroup(createMarkSet(sampleSize));
+  foodSet
+    .update("x", (m) => m.attr("time"))
+    .update("y", (m) => m.attr("placeholder"))
+    .update("size", (m) => 20);
+  foodSet.configure({ animationDuration: 500 });
 
-    if (foundIngredients.length < 10) {
-      foundIngredients.forEach(element => {
-      let result = document.createElement('button');
-      result.name = "ingredient-result-button";
-      result.textContent = String(element);
-      result.onclick = () => {
-        let b = document.createElement('button');
-        b.textContent = String(element) + " added to list";
-        b.classList.add('result-added-button');
-        b.style.backgroundColor = "red";
-        b.style.position = "absoulte";
-        selectedIngredients.push(element);
-        ingredientBar.removeChild(result);
-        enteredIngredientsBox.appendChild(b);
-        
-      };
-
-      ingredientBar.appendChild(result);
+  summarySet = createSummaryMarks();
+  summarySet.configure({ animationDuration: 1000 });
+  
+  console.log("Preloading images...");
+  await preloadImages(dataCSV, true);
+  
+  imagesLoaded = true;
+  
+  let mins = getMins(foodSet);
+  let maxes = getMaxes(foodSet);
+  scales = new Scales({ animationDuration: 500 })
+    .xRange([mins[0], maxes[0]])
+    .yRange([mins[0], maxes[0]])
+    .onUpdate(() => {
+      const currentT = d3.zoomTransform(canvas);
+      const t = scales.transform();
+      if (t.k !== currentT.k || t.x !== currentT.x || t.y !== currentT.y) {
+        d3.select(canvas as Element).call(
+          zoom.transform,
+          new d3.ZoomTransform(t.k, t.x, t.y)
+        );
+      }
+      if (!!summaryPositionMap) summaryPositionMap.invalidate();
+      if (!!foodPositionMap) foodPositionMap.invalidate();
     });
+
+  console.log("Creating position maps...");
+  
+  summaryPositionMap = new PositionMap({
+    maximumHitTestDistance: 20,
+  }).add(summarySet);
+  
+  foodPositionMap = new PositionMap({
+    maximumHitTestDistance: 20,
+  }).add(foodSet);
+  
+  foodSet.configure({
+    hitTest: (mark, location) => {
+      let x = mark.attr('x');
+      let y = mark.attr('y');
+      let r = mark.attr('size');
+      return Math.sqrt(Math.pow(x - location[0], 2.0) + Math.pow(y - location[1], 2.0)) <= r;
     }
-  })
-
-
-
-  }
+  });
+  
+  console.log("Setting up ticker...");
+  
+  ticker = new Ticker([foodSet, scales]).onChange(() => {
+    requestAnimationFrame(drawMarks);
+  });
+  
+  createAxes(
+    d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000]),
+    d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
+  );
+  
+  console.log("Initialization complete");
+}
 
   $: if (imagesLoaded) {
     ticker = new Ticker([foodSet, scales]).onChange(() => {
@@ -607,108 +674,127 @@ async function initVisualization () {
   }
 
   async function triggerFoodView() {
-    if (fromFrontPage) 
-    {
-      initVisualization();
+  if (currentView === "frontPage") {
+    try {
+      imagesLoaded = false;
+      
+      currentView = "food";
+      
+      if (!dataCSV) {
+        console.log("Loading data for the first time...");
+        dataCSV = await d3.csv("src/datasets/food_data.csv");
+      }
+      
+      console.log("Initializing visualization...");
+      await initVisualization();
+      
+      setupCanvas();
+      
+      console.log("Drawing marks for the first time...");
+      drawMarks();
+      
       fromFrontPage = false;
+    } catch (error) {
+      console.error("Error initializing visualization:", error);
+      currentView = "frontPage";
+      imagesLoaded = false;
     }
-    if (currentView === "summary") {
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      const transform = d3.zoomTransform(canvas);
+  } else if (currentView === "summary") {
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const transform = d3.zoomTransform(canvas);
 
-      if (ctx && transform) {
-        const visibleMarks = foodSet.filter((mark) => {
+    if (ctx && transform) {
+      const visibleMarks = foodSet.filter((mark) => {
+        const x = transform.applyX(mark.attr("x"));
+        const y = transform.applyY(mark.attr("y"));
+        const size = mark.attr("size");
+        return (
+          x + size >= 0 &&
+          y + size >= 0 &&
+          x + size <= canvas.clientWidth &&
+          y + size <= canvas.clientHeight
+        );
+      });
+      if (visibleMarks.count() < renderLimit * 0.9) {
+        let promise = new Promise((resolve, reject) => {
+          setTimeout(() => resolve("done!"), 2050);
+        });
+        currentView = "food";
+        summarySet.forEach((mark) => {
+          mark
+            .attr("marks")
+            .update("x", (m) => m.attr("time"))
+            .update("y", (m) => m.attr("placeholder"));
+        });
+        let visibleSummarySet = summarySet.filter((mark) => {
           const x = transform.applyX(mark.attr("x"));
           const y = transform.applyY(mark.attr("y"));
           const size = mark.attr("size");
+
           return (
-            x + size >= 0 &&
-            y + size >= 0 &&
-            x + size <= canvas.clientWidth &&
-            y + size <= canvas.clientHeight
-          );
-        });
-        if (visibleMarks.count() < renderLimit * 0.9) {
-          let promise = new Promise((resolve, reject) => {
-            setTimeout(() => resolve("done!"), 2050);
-          });
-          currentView = "food";
-          summarySet.forEach((mark) => {
             mark
               .attr("marks")
-              .update("x", (m) => m.attr("time"))
-              .update("y", (m) => m.attr("placeholder"));
-          });
-          let visibleSummarySet = summarySet.filter((mark) => {
-            const x = transform.applyX(mark.attr("x"));
-            const y = transform.applyY(mark.attr("y"));
-            const size = mark.attr("size");
+              .filter((m) => {
+                const x = transform.applyX(m.attr("x"));
+                const y = transform.applyY(m.attr("y"));
+                const size = m.attr("size");
 
-            return (
-              mark
-                .attr("marks")
-                .filter((m) => {
-                  const x = transform.applyX(m.attr("x"));
-                  const y = transform.applyY(m.attr("y"));
-                  const size = m.attr("size");
-
-                  return (
-                    x + size >= 0 &&
-                    y + size >= 0 &&
-                    x + size <= canvas.clientWidth &&
-                    y + size <= canvas.clientHeight
-                  );
-                })
-                .count() > 0 ||
-              (x + size >= 0 &&
-                y + size >= 0 &&
-                x + size <= canvas.clientWidth &&
-                y + size <= canvas.clientHeight)
-            );
-          });
-
-          visibleSummarySet.forEach((summaryMark) => {
-            const { x, y, marks } = summaryMark.get();
-            marks
-              .update(
-                "x",
-                x + (Math.random() * 5 * Math.random() < 0.5 ? -1 : 1)
-              )
-              .update(
-                "y",
-                y + (Math.random() * 5 * Math.random() < 0.5 ? -1 : 1)
-              );
-          });
-
-          visibleSummarySet.forEach((group) => {
-            group
-              .attr("marks")
-              .animate("x")
-              .animate("y")
-              .animateTo("x", (m) => m.attr("time"), {
-                duration: 2000,
+                return (
+                  x + size >= 0 &&
+                  y + size >= 0 &&
+                  x + size <= canvas.clientWidth &&
+                  y + size <= canvas.clientHeight
+                );
               })
-              .animateTo("y", (m) => m.attr("placeholder"), {
-                duration: 2000,
-              });
-          });
-
-          await promise;
-          // implement zoom in
-          createAxes(
-            transform.rescaleX(
-              d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
-            ),
-            transform.rescaleY(
-              d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
-            )
+              .count() > 0 ||
+            (x + size >= 0 &&
+              y + size >= 0 &&
+              x + size <= canvas.clientWidth &&
+              y + size <= canvas.clientHeight)
           );
-        } else {
-          alert("zoom in more, too many marks to render"); // try to optimize code so that this isn't neccesary
-        }
+        });
+
+        visibleSummarySet.forEach((summaryMark) => {
+          const { x, y, marks } = summaryMark.get();
+          marks
+            .update(
+              "x",
+              x + (Math.random() * 5 * Math.random() < 0.5 ? -1 : 1)
+            )
+            .update(
+              "y",
+              y + (Math.random() * 5 * Math.random() < 0.5 ? -1 : 1)
+            );
+        });
+
+        visibleSummarySet.forEach((group) => {
+          group
+            .attr("marks")
+            .animate("x")
+            .animate("y")
+            .animateTo("x", (m) => m.attr("time"), {
+              duration: 2000,
+            })
+            .animateTo("y", (m) => m.attr("placeholder"), {
+              duration: 2000,
+            });
+        });
+
+        await promise;
+        createAxes(
+          transform.rescaleX(
+            d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
+          ),
+          transform.rescaleY(
+            d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
+          )
+        );
+      } else {
+        alert("zoom in more, too many marks to render"); 
       }
     }
   }
+}
 
   function handleClick(event: MouseEvent) {
     const rect = canvas.getBoundingClientRect();
@@ -732,22 +818,19 @@ async function initVisualization () {
     console.log("Canvas coordinates:", [canvasX, canvasY]);
     //console.log("Data coordinates:", [dataX, dataY]);
 
-    // Depending on the current view, use the appropriate PositionMap for hit testing
     if (currentView === "summary") {
       const clickedMark = summaryPositionMap.hitTest([dataX, dataY]);
     
       if (clickedMark) {
         console.log("Clicked summary mark:", clickedMark);
       
-        // Get the marks contained within the summary mark
         const containedMarks = clickedMark.attr("marks");
-        // Calculate the bounding box of these marks to zoom to
+     
         const markBBox = markBox(containedMarks.getMarks());
       
-        // Zoom to this area with some padding
         scales.zoomTo(markBBox);
       
-        // Switch to food view after zoom animation completes
+  
         setTimeout(() => {
           triggerFoodView();
         }, 1200);
@@ -780,7 +863,6 @@ async function initVisualization () {
 
 
 
-  // placeholder/testing funcs
   function changeAnimationSettings() {
     animateOnlyVisibleMarks = !animateOnlyVisibleMarks;
   }
@@ -796,47 +878,47 @@ async function initVisualization () {
 </script>
 
 <main>
-{#if foodView()}
-<div>
   <div id="visualization-box">
     {#key imagesLoaded}
       <div class="loading-screen" hidden={imagesLoaded}>Loading...</div>
     {/key}
-    <svg id="axes" style="position: absolute; left: 20%; width: 70%;"></svg>
-    <canvas bind:this={canvas} style="position:absolute; left: 25%;"></canvas>
+    <svg id="axes" style="position: absolute; left: 20%; width: 70%;" class:hidden={currentView === "frontPage"}></svg>
+    <canvas bind:this={canvas} style="position:absolute; left: 25%;" class:hidden={currentView === "frontPage"}></canvas>
   </div>
-  <button
-    on:click={triggerSummaryView}
-    style="position:absolute; top: 10%; left:10%;">Activate Summary View</button
-  >
-  <button
-    on:click={triggerFoodView}
-    style="position:absolute; top: 30%; left:10%;">Activate Food View</button
-  >
-  <button
-    on:click={changeAnimationSettings}
-    style="position:absolute; top: 40%; left:5%;"
-    >Change animation of visible marks
-  </button>
 
-  <div id="clicked-mark-box" style="position:absolute; top: 50%; left:1%; width: 50px;"></div>
+  {#if currentView === "food"}
+    <button
+      on:click={triggerSummaryView}
+      style="position:absolute; top: 10%; left:10%;">Activate Summary View</button>
+    <button
+      on:click={triggerFoodView}
+      style="position:absolute; top: 30%; left:10%;">Activate Food View</button>
+    <button
+      on:click={changeAnimationSettings}
+      style="position:absolute; top: 40%; left:5%;"
+      >Change animation of visible marks
+    </button>
 
-  <div id="ingredient-bar" style="position:absolute; top: 60%; right:0.01%; width: 150px;">
-    <input id="search-bar" type="text" placeholder="Enter an ingredient...">
-    <div id="entered-ingredients-box"></div>
+    <div id="clicked-mark-box-front" style="position:absolute; top: 50%; left:1%; width: 50px;"></div>
+
+    <div id="ingredient-bar-front" style="position:absolute; top: 60%; right:0.01%; width: 150px;">
+      <input id="search-bar-front" type="text" placeholder="Enter more ingredients...">
+      <div id="entered-ingredients-box-front"></div>
     </div>
-  </div>
   {/if}
 
-  {#if frontPage()}
-  <div class="front-page" style="z-index: 11;">
+  {#if currentView === "frontPage"}
+    <div class="front-page" style="z-index: 11;">
       <h1>Welcome to FoodTable!</h1>
-      <h2>Enter your ingredients to begin!</h2>
-      <button on:click={triggerFoodView}>Enter the tool</button>
+      <h2>Click the button below to enter (will add more to this page dw)</h2>
+      <div id="ingredient-bar">
+        <input id="search-bar-front" type="text" placeholder="Enter an ingredient...">
+        <div id="entered-ingredients-box"></div>
       </div>
+      <button on:click={triggerFoodView}>Enter the tool</button>
+    </div>
   {/if}
-
-  </main>
+</main>
 
 <style>
   main {
@@ -845,10 +927,12 @@ async function initVisualization () {
     max-width: 240px;
     margin: 0 auto;
   }
+  
   canvas {
-    z-index: 5;
+    z-index: 10;
     image-rendering: optimizeSpeed;
   }
+  
   .loading-screen {
     background-color: white;
   }
@@ -860,18 +944,20 @@ async function initVisualization () {
     left: 30%;
   }
 
-  #entered-ingredients-box {
-    position: absolute;  /* Position it above #searchBar */
-      top: -100px;          /* Positioned above the search bar */
-      left: 0;
-      right: 0;
-      padding: 10px;
-      display: flex;
-      flex-direction: column-reverse; /* Flexbox to make elements go up */
-      gap: 10px;
-      height: 50px;
-      width: 200px;
+  .hidden {
+    display: none !important;
   }
 
-  
+  #entered-ingredients-box {
+    position: absolute;
+    top: -100px;
+    left: 0;
+    right: 0;
+    padding: 10px;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 10px;
+    height: 50px;
+    width: 200px;
+  }
 </style>
