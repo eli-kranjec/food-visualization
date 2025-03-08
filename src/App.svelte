@@ -9,8 +9,9 @@
     PositionMap,
   } from "counterpoint-vis";
   import * as d3 from "d3";
-  import ingredientsArray from "../ingredients_filtered.js";
+  // import ingredientsArray from "../ingredients_filtered.js";
   import { onMount } from "svelte";
+  import * as fs from 'fs';
 
   type FoodMarkAttrs = {
     title: Attribute<string>;
@@ -45,7 +46,7 @@
   { 
     id: "time", 
     label: "Preparation Time", 
-    valueFn: (mark) => mark.attr("time") 
+    valueFn: (mark) => mark.attr("time") * 2
   },
   { 
     id: "placeholder", 
@@ -55,22 +56,24 @@
   { 
     id: "ingredientCount", 
     label: "Number of Ingredients", 
-    valueFn: (mark) => mark.attr("ingredients").length 
+    valueFn: (mark) => mark.attr("ingredients").length  * 5
   },
   {
     id: "stepCount",
     label: "Number of steps in recipe",
-    valueFn: (mark) => mark.attr("instructions").length
+    valueFn: (mark) => mark.attr("instructions").length * 5
   }
 ];
 
   let selectedXAxis: string = "time";
-  let selectedYAxis: string = "placeholder";
+  let selectedYAxis: string = "stepCount";
+  let selectedSize : string = "ingredientCount";
+
 
 
   let canvasHeight: number = 650;
   let canvasWidth: number = 900;
-  let gridSize: number = 5;
+  let gridSize: number = 2;
 
   let dataCSV: d3.DSVRowArray;
   let canvas: HTMLCanvasElement;
@@ -86,11 +89,30 @@
   let animateOnlyVisibleMarks: boolean = false;
   let sampleSize: number = 200;
   let renderLimit: number = 201;
-  let searchBar: HTMLInputElement;
-  let ingredientBar : HTMLDivElement;
   let selectedIngredients : String[] = new Array;
   let fromFrontPage = true;
-  let ingredientCheckbox : HTMLInputElement | null;
+  let filteringDropdown : HTMLSelectElement | null;
+  let ingredientsArray : string[] = [];
+
+  type FilterOption = "onlyComplete" | "anyIngredient" | "allIngredients";
+  let selectedFilterOption: FilterOption = "allIngredients";  
+
+$: selectedFilterOption = filteringDropdown?.value as FilterOption;
+
+fetch('src/cleanedIngredients.txt')
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Failed to load ingredients file');
+    }
+    return response.text();
+  })
+  .then(text => {
+    ingredientsArray = text.split('\n').filter(ingredient => ingredient.trim().length > 0);
+    console.log(`Loaded ${ingredientsArray.length} ingredients`);
+  })
+  .catch(error => {
+    console.error('Error loading ingredients:', error);
+  });
 
   onMount(() => {
   if (canvas) {
@@ -101,21 +123,21 @@
       .on("click", handleClick)
       .call(zoom);
   }
+
   
-  setupIngredientSearchBar(
-    "search-bar", 
-    "ingredient-bar", 
-    "entered-ingredients-box"
-  );
-  
+
+  filteringDropdown = document.getElementById("dropdown") as HTMLSelectElement;
+
   setupIngredientSearchBar(
     "search-bar-front", 
     "ingredient-bar-front", 
     "entered-ingredients-box-front"
   );
   
-  ingredientCheckbox = document.getElementById("ingredient-checkbox") as HTMLInputElement;
+  
 });
+
+
 
 
 function setupIngredientSearchBar(
@@ -131,8 +153,27 @@ function setupIngredientSearchBar(
     searchBar.addEventListener('keydown', function(event) {
       if (document.activeElement === searchBar && event.key === 'Enter') {
         if (searchBar.value) {
-          if (ingredientsArray.includes(searchBar.value.toLowerCase())) {
+          let barVal = searchBar.value.toLowerCase();
+          if (ingredientsArray.includes(barVal)) {
             searchBar.value = "";
+            selectedIngredients.push(barVal);
+            let b = document.createElement('button');
+            b.textContent = barVal;
+            b.classList.add('result-added-button');
+            b.style.backgroundColor = "#4CAF50";
+            b.style.margin = "2px";
+            b.style.padding = "5px";
+            b.style.borderRadius = "3px";
+            b.style.color = "white";
+            enteredIngredientsBox.appendChild(b);
+            foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+            
+            b.onclick = () => {
+              selectedIngredients = selectedIngredients.filter(ing => ing !== barVal);
+              enteredIngredientsBox.removeChild(b);
+              foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+            };
+
           } else {
             console.log("Ingredient not found");
           }
@@ -172,6 +213,7 @@ function setupIngredientSearchBar(
             b.onclick = () => {
               selectedIngredients = selectedIngredients.filter(ing => ing !== element);
               enteredIngredientsBox.removeChild(b);
+              foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
             };
             
             searchBar.value = "";
@@ -185,6 +227,27 @@ function setupIngredientSearchBar(
           ingredientBar.appendChild(result);
         });
       }
+    });
+  }
+
+  if (currentView === "food") {
+    selectedIngredients.forEach(element => {
+      let b = document.createElement('button');
+            b.textContent = String(element);
+            b.classList.add('result-added-button');
+            b.style.backgroundColor = "#4CAF50";
+            b.style.margin = "2px";
+            b.style.padding = "5px";
+            b.style.borderRadius = "3px";
+            b.style.color = "white";
+            
+            b.onclick = () => {
+              selectedIngredients = selectedIngredients.filter(ing => ing !== element);
+              enteredIngredientsBox.removeChild(b);
+              foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+            };
+
+            enteredIngredientsBox.appendChild(b);
     });
   }
 }
@@ -237,7 +300,7 @@ function setupIngredientSearchBar(
 
   const findIngredients = (id: number): string[] => {
     if (!dataCSV) return [];
-    const ingredientsString = dataCSV[id]?.Ingredients ?? "";
+    const ingredientsString = dataCSV[id]?.Ingredients ?? "" + dataCSV[id]?.Cleaned_Ingredients ?? "";
     return d3.filter(ingredientsArray, (ing) =>
       ingredientsString.includes(ing)
     );
@@ -262,7 +325,7 @@ function setupIngredientSearchBar(
       instructions: {value: dataCSV[Number(id)]?.Instructions}
     });
 
-function createAxisControls() {
+    function createAxisControls() {
   const axisControlsDiv = document.createElement('div');
   axisControlsDiv.id = 'axis-controls';
   axisControlsDiv.style.position = 'absolute';
@@ -276,7 +339,6 @@ function createAxisControls() {
   axisControlsDiv.style.borderRadius = '5px';
   axisControlsDiv.style.zIndex = '15';
   
-  // X-axis selector
   const xAxisDiv = document.createElement('div');
   xAxisDiv.className = 'axis-selector';
   
@@ -331,8 +393,37 @@ function createAxisControls() {
   yAxisDiv.appendChild(yAxisLabel);
   yAxisDiv.appendChild(yAxisSelect);
   
+  // Add Size Selector
+  const sizeDiv = document.createElement('div');
+  sizeDiv.className = 'axis-selector';
+  
+  const sizeLabel = document.createElement('label');
+  sizeLabel.textContent = 'Mark Size: ';
+  sizeLabel.htmlFor = 'size-select';
+  
+  const sizeSelect = document.createElement('select');
+  sizeSelect.id = 'size-select';
+  
+  axisOptions.forEach(option => {
+    const optionElement = document.createElement('option');
+    optionElement.value = option.id;
+    optionElement.textContent = option.label;
+    optionElement.selected = option.id === selectedSize;
+    sizeSelect.appendChild(optionElement);
+  });
+  
+  sizeSelect.addEventListener('change', (event) => {
+    const target = event.target as HTMLSelectElement;
+    selectedSize = target.value;
+    updateVisualization();
+  });
+  
+  sizeDiv.appendChild(sizeLabel);
+  sizeDiv.appendChild(sizeSelect);
+  
   axisControlsDiv.appendChild(xAxisDiv);
   axisControlsDiv.appendChild(yAxisDiv);
+  axisControlsDiv.appendChild(sizeDiv);
   
   document.body.appendChild(axisControlsDiv);
   
@@ -344,19 +435,24 @@ function updateVisualization() {
   
   const xOption = axisOptions.find(opt => opt.id === selectedXAxis);
   const yOption = axisOptions.find(opt => opt.id === selectedYAxis);
+  const sizeOption = axisOptions.find(opt => opt.id === selectedSize);
   
-  if (!xOption || !yOption) return;
+  if (!xOption || !yOption || !sizeOption) return;
   
-  // Animate the transitions to new positions
   foodSet
     .animate("x")
     .animate("y")
+    .animate("size")
     .animateTo("x", xOption.valueFn, { duration: 2000 })
-    .animateTo("y", yOption.valueFn, { duration: 2000 });
+    .animateTo("y", yOption.valueFn, { duration: 2000 })
+    .animateTo("size", (mark) => {
+      // Scale the size value to be more visually appropriate
+      const rawValue = sizeOption.valueFn(mark);
+      // Apply a scaling factor to get reasonable circle sizes
+      return Math.max(10, Math.min(40, rawValue / 10));
+    }, { duration: 2000 });
   
-  // If in summary view, we need to update the summary marks too
   if (currentView === "summary") {
-    // Store original positions before updating summary marks
     const originalPositions = new Map();
     summarySet.forEach(mark => {
       originalPositions.set(mark.id, {
@@ -365,10 +461,8 @@ function updateVisualization() {
       });
     });
     
-    // Create new summary set based on updated food positions
     summarySet = createSummaryMarks();
     
-    // Animate summary marks from their original positions
     summarySet.forEach(mark => {
       const originalPos = originalPositions.get(mark.id);
       if (originalPos) {
@@ -389,7 +483,6 @@ function updateVisualization() {
     }
   }
   
-  // Update position maps after animation completes
   setTimeout(() => {
     if (foodPositionMap) {
       foodPositionMap.invalidate();
@@ -397,12 +490,10 @@ function updateVisualization() {
     }
   }, 2000);
   
-  // Redraw continuously during animation
   let animationTimer = setInterval(() => {
     drawMarks();
-  }, 16); // ~60fps
+  }, 16);
   
-  // Clear the animation timer after animation completes
   setTimeout(() => {
     clearInterval(animationTimer);
     drawMarks(); // One final draw to ensure correct positions
@@ -410,6 +501,7 @@ function updateVisualization() {
   
   updateAxisLabels(xOption.label, yOption.label);
 }
+
 
 function updateAxisLabels(xLabel: string, yLabel: string) {
   // Remove any existing labels
@@ -477,18 +569,13 @@ function setupCanvas() {
 }
 
 const drawMarks = () => {
-  console.log("Drawing marks in view:", currentView);
   
-  if (!dataCSV || !canvas) {
-    console.log("Missing data or canvas for drawing");
-    return;
-  }
+  
+  if (!dataCSV || !canvas) return;
 
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) {
-    console.error("Could not get canvas context");
-    return;
-  }
+
+  if (!ctx) return;
 
   const transform = d3.zoomTransform(canvas);
   if (currentView === "food") {
@@ -810,20 +897,33 @@ const drawMarks = () => {
 
 
   async function initVisualization() {
-  
   if (!dataCSV) {
     return;
   }
+
+  setupIngredientSearchBar(
+    "search-bar", 
+    "ingredient-bar", 
+    "entered-ingredients-box"
+  );
+
+  selectedFilterOption = filteringDropdown?.value as FilterOption;
     
-  foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, ingredientCheckbox ? ingredientCheckbox.checked : true));
+  foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
   
   const xOption = axisOptions.find(opt => opt.id === selectedXAxis);
   const yOption = axisOptions.find(opt => opt.id === selectedYAxis);
+  const sizeOption = axisOptions.find(opt => opt.id === selectedSize);
   
   foodSet
     .update("x", xOption ? xOption.valueFn : (m) => m.attr("time"))
     .update("y", yOption ? yOption.valueFn : (m) => m.attr("placeholder"))
-    .update("size", (m) => 20);
+    .update("size", sizeOption ? 
+      (mark) => {
+        const rawValue = sizeOption.valueFn(mark);
+        return Math.max(10, Math.min(40, rawValue / 10));
+      } : (m) => 20);
+  
   foodSet.configure({ animationDuration: 500 });
 
   summarySet = createSummaryMarks();
@@ -859,15 +959,17 @@ const drawMarks = () => {
   }).add(summarySet);
   
   foodPositionMap = new PositionMap({
-    maximumHitTestDistance: 20,
+    maximumHitTestDistance: 40,
   }).add(foodSet);
   
   foodSet.configure({
     hitTest: (mark, location) => {
-      let x = mark.attr('x');
-      let y = mark.attr('y');
-      let r = mark.attr('size');
-      return Math.sqrt(Math.pow(x - location[0], 2.0) + Math.pow(y - location[1], 2.0)) <= r;
+      const ZOOM_SCALE = 30 / d3.zoomTransform(canvas).k;
+      const x = mark.attr('x');
+      const y = mark.attr('y');
+      const size = mark.attr('size') * 2 * ZOOM_SCALE; 
+      const distance = Math.sqrt(Math.pow(x - location[0], 2) + Math.pow(y - location[1], 2));
+      return distance <= size;
     }
   });
   
@@ -895,13 +997,14 @@ const drawMarks = () => {
     // );
 
     foodPositionMap = new PositionMap({
-      maximumHitTestDistance: 20,
+      maximumHitTestDistance: 40,
     }).add(foodSet);
     foodSet.configure({
       hitTest: (mark, location) => {
+        const ZOOM_SCALE = 30 / d3.zoomTransform(canvas).k;
         let x = mark.attr('x');
         let y = mark.attr('y');
-        let r = mark.attr('size');
+        let r = mark.attr('size') * 2 * ZOOM_SCALE;
         return Math.sqrt(Math.pow(x - location[0], 2.0) + Math.pow(y - location[1], 2.0)) <= r;
       }
     })
@@ -935,7 +1038,7 @@ const drawMarks = () => {
     return shuffled.slice(0, size).map((point) => createMark(point[""]));
   }
 
-  function createSortedSet(ingredientList: String[], includeOnlyFullRecipes: boolean): Mark<FoodMarkAttrs>[] {
+  function createSortedSet(ingredientList: String[], filterSetting : FilterOption): Mark<FoodMarkAttrs>[] {
   if (!dataCSV || ingredientList.length === 0) return [];
   
   const matchingMarks: Mark<FoodMarkAttrs>[] = [];
@@ -945,14 +1048,16 @@ const drawMarks = () => {
     
     let isMatch = false;
     
-    if (includeOnlyFullRecipes) {
+    if (filterSetting === "allIngredients") {
       isMatch = ingredientList.every(ingredient => 
         recipeIngredients.some(recipeIng => recipeIng.includes(ingredient.toLowerCase()))
       );
-    } else {
+    } else if (filterSetting === "anyIngredient") {
       isMatch = ingredientList.some(ingredient => 
         recipeIngredients.some(recipeIng => recipeIng.includes(ingredient.toLowerCase()))
       );
+    } else {
+      isMatch = recipeIngredients.every(recipeIng => ingredientList.some((ingredient) => recipeIng.includes(ingredient.toLowerCase())));
     }
     
     if (isMatch) {
@@ -1107,8 +1212,10 @@ async function triggerFoodView() {
   
     const transform = d3.zoomTransform(canvas);
     const [dataX, dataY] = transform.invert([canvasX, canvasY]);
+    
+    // transform.k = 1 @ initial, 0.1 min and 10 max
   
-    console.log("Canvas coordinates:", [canvasX, canvasY]);
+    //console.log("Canvas coordinates:", [canvasX, canvasY]);
     //console.log("Data coordinates:", [dataX, dataY]);
 
     if (currentView === "summary") {
@@ -1214,7 +1321,7 @@ function extractDataProperties() {
 
     <div id="ingredient-bar" style="position:absolute; top: 60%; right:0.01%; width: 150px;">
       <input id="search-bar" type="text" placeholder="Enter more ingredients...">
-      <div id="entered-ingredients-box"></div>
+      <div id="entered-ingredients-box" style="max-width: 150px;"></div>
     </div>
   {/if}
 
@@ -1227,7 +1334,11 @@ function extractDataProperties() {
         <div id="entered-ingredients-box-front"></div>
       </div>
       <button on:click={triggerFoodView}>Enter the tool</button>
-      <p>Only include recipes that all ingredients are entered for?</p><input id="ingredient-checkbox" type="checkbox" checked>
+      <select id="dropdown">
+        <option value="onlyComplete"> Only show recipes for which you've entered all ingredients</option>
+        <option value="anyIngredient"> Show all recipes that feature an entered ingredient</option>
+        <option value="allIngredients"> Only show recipes that feature ALL entered ingredients</option>
+      </select>
     </div>
   {/if}
 </main>
@@ -1273,14 +1384,13 @@ function extractDataProperties() {
     width: 200px;
   }
 
-  /* Add this to your <style> section */
 #entered-ingredients-box, #entered-ingredients-box-front {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
   margin-top: 10px;
   min-height: 30px;
-  width: 100%;
+  max-width: 500px;
 }
 
 .result-added-button {
