@@ -22,6 +22,7 @@
     time: Attribute<number>;
     placeholder: Attribute<number>;
     name: Attribute<string>;
+    instructions: Attribute<string>;
   };
 
   type SummaryMark = {
@@ -32,6 +33,40 @@
     yIndex: Attribute<number>;
     marks: Attribute<MarkRenderGroup<FoodMarkAttrs>>;
   };
+
+  type AxisOption = {
+  id: string;
+  label: string;
+  valueFn: (mark: Mark<FoodMarkAttrs>) => number;
+};
+
+// Add this to your component's variables section
+  let axisOptions: AxisOption[] = [
+  { 
+    id: "time", 
+    label: "Preparation Time", 
+    valueFn: (mark) => mark.attr("time") 
+  },
+  { 
+    id: "placeholder", 
+    label: "Randomized", 
+    valueFn: (mark) => mark.attr("placeholder") 
+  },
+  { 
+    id: "ingredientCount", 
+    label: "Number of Ingredients", 
+    valueFn: (mark) => mark.attr("ingredients").length 
+  },
+  {
+    id: "stepCount",
+    label: "Number of steps in recipe",
+    valueFn: (mark) => mark.attr("instructions").length
+  }
+];
+
+  let selectedXAxis: string = "time";
+  let selectedYAxis: string = "placeholder";
+
 
   let canvasHeight: number = 650;
   let canvasWidth: number = 900;
@@ -62,26 +97,43 @@
     canvas.width = canvasWidth;
     canvas.height = canvasHeight;
     
-    
     d3.select(canvas as Element)
       .on("click", handleClick)
       .call(zoom);
   }
   
-  searchBar = document.getElementById("search-bar") as HTMLInputElement;
-  ingredientBar = document.getElementById("ingredient-bar") as HTMLDivElement;
-  let enteredIngredientsBox = document.getElementById("entered-ingredients-box") as HTMLDivElement;
+  setupIngredientSearchBar(
+    "search-bar", 
+    "ingredient-bar", 
+    "entered-ingredients-box"
+  );
+  
+  setupIngredientSearchBar(
+    "search-bar-front", 
+    "ingredient-bar-front", 
+    "entered-ingredients-box-front"
+  );
+  
+  ingredientCheckbox = document.getElementById("ingredient-checkbox") as HTMLInputElement;
+});
+
+
+function setupIngredientSearchBar(
+  searchBarId: string, 
+  ingredientBarId: string, 
+  enteredIngredientsBoxId: string
+) {
+  const searchBar = document.getElementById(searchBarId) as HTMLInputElement;
+  const ingredientBar = document.getElementById(ingredientBarId) as HTMLDivElement;
+  const enteredIngredientsBox = document.getElementById(enteredIngredientsBoxId) as HTMLDivElement;
 
   if (searchBar) {
     searchBar.addEventListener('keydown', function(event) {
       if (document.activeElement === searchBar && event.key === 'Enter') {
-        if (searchBar?.value) 
-        {
-          if (ingredientsArray.includes(searchBar.value.toLowerCase())) 
-          {
+        if (searchBar.value) {
+          if (ingredientsArray.includes(searchBar.value.toLowerCase())) {
             searchBar.value = "";
-          } else 
-          {
+          } else {
             console.log("Ingredient not found");
           }
         }
@@ -90,11 +142,15 @@
 
     searchBar.addEventListener('input', function(event) {
       let buttons = document.getElementsByName("ingredient-result-button");
-      
       buttons.forEach(element => {
-        ingredientBar.removeChild(element);
+        if (element.parentNode === ingredientBar) {
+          ingredientBar.removeChild(element);
+        }
       });
-      let foundIngredients = ingredientsArray.filter(e => e.includes(searchBar.value));
+      
+      let foundIngredients = ingredientsArray.filter(e => 
+        e.includes(searchBar.value.toLowerCase())
+      );
 
       if (foundIngredients.length < 10) {
         foundIngredients.forEach(element => {
@@ -102,14 +158,28 @@
           result.name = "ingredient-result-button";
           result.textContent = String(element);
           result.onclick = () => {
-            let b = document.createElement('button');
-            b.textContent = String(element) + " added to list";
-            b.classList.add('result-added-button');
-            b.style.backgroundColor = "red";
-            b.style.position = "absoulte";
             selectedIngredients.push(element);
+            
+            let b = document.createElement('button');
+            b.textContent = String(element);
+            b.classList.add('result-added-button');
+            b.style.backgroundColor = "#4CAF50";
+            b.style.margin = "2px";
+            b.style.padding = "5px";
+            b.style.borderRadius = "3px";
+            b.style.color = "white";
+            
+            b.onclick = () => {
+              selectedIngredients = selectedIngredients.filter(ing => ing !== element);
+              enteredIngredientsBox.removeChild(b);
+            };
+            
+            searchBar.value = "";
             ingredientBar.removeChild(result);
+            
             enteredIngredientsBox.appendChild(b);
+            
+            console.log("Selected ingredients:", selectedIngredients);
           };
 
           ingredientBar.appendChild(result);
@@ -117,60 +187,7 @@
       }
     });
   }
-
-  let searchBarFront = document.getElementById("search-bar-front") as HTMLInputElement;
-  let ingredientBarFront = document.getElementById("ingredient-bar-front") as HTMLDivElement;
-  let enteredIngredientsBoxFront = document.getElementById("entered-ingredients-box-front") as HTMLDivElement;
-  ingredientCheckbox = document.getElementById("ingredient-checkbox") as HTMLInputElement;
-
-  if (searchBarFront) {
-    searchBarFront.addEventListener('keydown', function(event) {
-      if (document.activeElement === searchBarFront && event.key === 'Enter') {
-        if (searchBarFront?.value) 
-        {
-          if (ingredientsArray.includes(searchBarFront.value.toLowerCase())) 
-          {
-            searchBar.value = "";
-          } else 
-          {
-            console.log("Ingredient not found");
-          }
-        }
-      }
-    });
-
-    searchBar.addEventListener('input', function(event) {
-      let buttons = document.getElementsByName("ingredient-result-button");
-      
-      buttons.forEach(element => {
-        ingredientBar.removeChild(element);
-      });
-      let foundIngredients = ingredientsArray.filter(e => e.includes(searchBarFront.value));
-
-      if (foundIngredients.length < 10) {
-        foundIngredients.forEach(element => {
-          let result = document.createElement('button');
-          result.name = "ingredient-result-button";
-          result.textContent = String(element);
-          result.onclick = () => {
-            let b = document.createElement('button');
-            b.textContent = String(element) + " added to list";
-            b.classList.add('result-added-button');
-            b.style.backgroundColor = "red";
-            b.style.position = "absoulte";
-            selectedIngredients.push(element);
-            ingredientBar.removeChild(result);
-            enteredIngredientsBoxFront.appendChild(b);
-          };
-
-          ingredientBarFront.appendChild(result);
-        });
-      }
-    });
-  }
-
-
-});
+}
 
 
 
@@ -242,9 +259,193 @@
       time: { value: 1000 * Math.random() },
       placeholder: { value: 1000 * Math.random() },
       name: {value: dataCSV[Number(id)]?.Title ?? "No Name"},
+      instructions: {value: dataCSV[Number(id)]?.Instructions}
     });
 
-    function setupCanvas() {
+function createAxisControls() {
+  const axisControlsDiv = document.createElement('div');
+  axisControlsDiv.id = 'axis-controls';
+  axisControlsDiv.style.position = 'absolute';
+  axisControlsDiv.style.top = '10px';
+  axisControlsDiv.style.left = '25%';
+  axisControlsDiv.style.width = '70%';
+  axisControlsDiv.style.display = 'flex';
+  axisControlsDiv.style.justifyContent = 'space-between';
+  axisControlsDiv.style.padding = '10px';
+  axisControlsDiv.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+  axisControlsDiv.style.borderRadius = '5px';
+  axisControlsDiv.style.zIndex = '15';
+  
+  // X-axis selector
+  const xAxisDiv = document.createElement('div');
+  xAxisDiv.className = 'axis-selector';
+  
+  const xAxisLabel = document.createElement('label');
+  xAxisLabel.textContent = 'X-Axis: ';
+  xAxisLabel.htmlFor = 'x-axis-select';
+  
+  const xAxisSelect = document.createElement('select');
+  xAxisSelect.id = 'x-axis-select';
+  
+  axisOptions.forEach(option => {
+    const optionElement = document.createElement('option');
+    optionElement.value = option.id;
+    optionElement.textContent = option.label;
+    optionElement.selected = option.id === selectedXAxis;
+    xAxisSelect.appendChild(optionElement);
+  });
+  
+  xAxisSelect.addEventListener('change', (event) => {
+    const target = event.target as HTMLSelectElement;
+    selectedXAxis = target.value;
+    updateVisualization();
+  });
+  
+  xAxisDiv.appendChild(xAxisLabel);
+  xAxisDiv.appendChild(xAxisSelect);
+  
+  const yAxisDiv = document.createElement('div');
+  yAxisDiv.className = 'axis-selector';
+  
+  const yAxisLabel = document.createElement('label');
+  yAxisLabel.textContent = 'Y-Axis: ';
+  yAxisLabel.htmlFor = 'y-axis-select';
+  
+  const yAxisSelect = document.createElement('select');
+  yAxisSelect.id = 'y-axis-select';
+  
+  axisOptions.forEach(option => {
+    const optionElement = document.createElement('option');
+    optionElement.value = option.id;
+    optionElement.textContent = option.label;
+    optionElement.selected = option.id === selectedYAxis;
+    yAxisSelect.appendChild(optionElement);
+  });
+  
+  yAxisSelect.addEventListener('change', (event) => {
+    const target = event.target as HTMLSelectElement;
+    selectedYAxis = target.value;
+    updateVisualization();
+  });
+  
+  yAxisDiv.appendChild(yAxisLabel);
+  yAxisDiv.appendChild(yAxisSelect);
+  
+  axisControlsDiv.appendChild(xAxisDiv);
+  axisControlsDiv.appendChild(yAxisDiv);
+  
+  document.body.appendChild(axisControlsDiv);
+  
+  return axisControlsDiv;
+}
+
+function updateVisualization() {
+  if (!foodSet || !dataCSV) return;
+  
+  const xOption = axisOptions.find(opt => opt.id === selectedXAxis);
+  const yOption = axisOptions.find(opt => opt.id === selectedYAxis);
+  
+  if (!xOption || !yOption) return;
+  
+  // Animate the transitions to new positions
+  foodSet
+    .animate("x")
+    .animate("y")
+    .animateTo("x", xOption.valueFn, { duration: 2000 })
+    .animateTo("y", yOption.valueFn, { duration: 2000 });
+  
+  // If in summary view, we need to update the summary marks too
+  if (currentView === "summary") {
+    // Store original positions before updating summary marks
+    const originalPositions = new Map();
+    summarySet.forEach(mark => {
+      originalPositions.set(mark.id, {
+        x: mark.attr("x"),
+        y: mark.attr("y")
+      });
+    });
+    
+    // Create new summary set based on updated food positions
+    summarySet = createSummaryMarks();
+    
+    // Animate summary marks from their original positions
+    summarySet.forEach(mark => {
+      const originalPos = originalPositions.get(mark.id);
+      if (originalPos) {
+        mark.attr("x", originalPos.x);
+        mark.attr("y", originalPos.y);
+        
+        mark
+          .animate("x")
+          .animate("y")
+          .animateTo("x", mark.attr("x"), { duration: 2000 })
+          .animateTo("y", mark.attr("y"), { duration: 2000 });
+      }
+    });
+    
+    if (summaryPositionMap) {
+      summaryPositionMap.invalidate();
+      summaryPositionMap.add(summarySet);
+    }
+  }
+  
+  // Update position maps after animation completes
+  setTimeout(() => {
+    if (foodPositionMap) {
+      foodPositionMap.invalidate();
+      foodPositionMap.add(foodSet);
+    }
+  }, 2000);
+  
+  // Redraw continuously during animation
+  let animationTimer = setInterval(() => {
+    drawMarks();
+  }, 16); // ~60fps
+  
+  // Clear the animation timer after animation completes
+  setTimeout(() => {
+    clearInterval(animationTimer);
+    drawMarks(); // One final draw to ensure correct positions
+  }, 2100);
+  
+  updateAxisLabels(xOption.label, yOption.label);
+}
+
+function updateAxisLabels(xLabel: string, yLabel: string) {
+  // Remove any existing labels
+  const existingXLabel = document.getElementById('x-axis-label');
+  const existingYLabel = document.getElementById('y-axis-label');
+  
+  if (existingXLabel) existingXLabel.remove();
+  if (existingYLabel) existingYLabel.remove();
+  
+  const xAxisLabel = document.createElement('div');
+  xAxisLabel.id = 'x-axis-label';
+  xAxisLabel.style.position = 'absolute';
+  xAxisLabel.style.bottom = '10px';
+  xAxisLabel.style.left = '50%';
+  xAxisLabel.style.transform = 'translateX(-50%)';
+  xAxisLabel.style.fontSize = '14px';
+  xAxisLabel.style.fontWeight = 'bold';
+  xAxisLabel.textContent = xLabel;
+  
+  // Create Y axis label
+  const yAxisLabel = document.createElement('div');
+  yAxisLabel.id = 'y-axis-label';
+  yAxisLabel.style.position = 'absolute';
+  yAxisLabel.style.top = '50%';
+  yAxisLabel.style.left = '25%';
+  yAxisLabel.style.transform = 'translateY(-50%) rotate(-90deg)';
+  yAxisLabel.style.transformOrigin = 'left center';
+  yAxisLabel.style.fontSize = '14px';
+  yAxisLabel.style.fontWeight = 'bold';
+  yAxisLabel.textContent = yLabel;
+  
+  document.body.appendChild(xAxisLabel);
+  document.body.appendChild(yAxisLabel);
+}
+
+function setupCanvas() {
   console.log("Setting up canvas");
   
   if (!canvas) {
@@ -255,10 +456,22 @@
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
   
-  
   d3.select(canvas as Element)
     .on("click", handleClick)
     .call(zoom);
+  
+  // Create the axis controls
+  if (currentView !== "frontPage") {
+    const axisControls = createAxisControls();
+    
+    // Set initial axis labels
+    const xOption = axisOptions.find(opt => opt.id === selectedXAxis);
+    const yOption = axisOptions.find(opt => opt.id === selectedYAxis);
+    
+    if (xOption && yOption) {
+      updateAxisLabels(xOption.label, yOption.label);
+    }
+  }
   
   console.log("Canvas setup complete");
 }
@@ -584,31 +797,32 @@ const drawMarks = () => {
       //   .update("x", (mark) => mark.attr("time"))
       //   .update("y", (mark) => mark.attr("placeholder"));
       // implement zoom out
-      createAxes(
-        transform.rescaleX(
-          d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
-        ),
-        transform.rescaleY(
-          d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
-        )
-      );
+      // createAxes(
+      //   transform.rescaleX(
+      //     d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
+      //   ),
+      //   transform.rescaleY(
+      //     d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
+      //   )
+      // );
     }
   }
 
 
   async function initVisualization() {
-  console.log("Initializing visualization with data:", dataCSV ? "loaded" : "not loaded");
   
   if (!dataCSV) {
-    console.error("Cannot initialize visualization: data not loaded");
     return;
   }
     
-  foodSet = new MarkRenderGroup(createMarkSet(sampleSize));
-  // foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, ingredientCheckbox.checked));
+  foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, ingredientCheckbox ? ingredientCheckbox.checked : true));
+  
+  const xOption = axisOptions.find(opt => opt.id === selectedXAxis);
+  const yOption = axisOptions.find(opt => opt.id === selectedYAxis);
+  
   foodSet
-    .update("x", (m) => m.attr("time"))
-    .update("y", (m) => m.attr("placeholder"))
+    .update("x", xOption ? xOption.valueFn : (m) => m.attr("time"))
+    .update("y", yOption ? yOption.valueFn : (m) => m.attr("placeholder"))
     .update("size", (m) => 20);
   foodSet.configure({ animationDuration: 500 });
 
@@ -663,13 +877,9 @@ const drawMarks = () => {
     requestAnimationFrame(drawMarks);
   });
   
-  createAxes(
-    d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000]),
-    d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
-  );
-  
   console.log("Initialization complete");
 }
+
 
   $: if (imagesLoaded) {
     ticker = new Ticker([foodSet, scales]).onChange(() => {
@@ -679,10 +889,10 @@ const drawMarks = () => {
       maximumHitTestDistance: 20,
     }).add(summarySet);
     requestAnimationFrame(drawMarks);
-    createAxes(
-      d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000]),
-      d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
-    );
+    // createAxes(
+    //   d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000]),
+    //   d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
+    // );
 
     foodPositionMap = new PositionMap({
       maximumHitTestDistance: 20,
@@ -707,14 +917,14 @@ const drawMarks = () => {
         scales.transform(e.transform);
         drawMarks();
         const transform = d3.zoomTransform(canvas);
-        createAxes(
-          transform.rescaleX(
-            d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
-          ),
-          transform.rescaleY(
-            d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
-          )
-        );
+        // createAxes(
+        //   transform.rescaleX(
+        //     d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
+        //   ),
+        //   transform.rescaleY(
+        //     d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
+        //   )
+        // );
       }
     });
 
@@ -725,24 +935,35 @@ const drawMarks = () => {
     return shuffled.slice(0, size).map((point) => createMark(point[""]));
   }
 
-  function createSortedSet(ingredientList: string[], includeOnlyFullRecipes: boolean) : Mark<FoodMarkAttrs>[]
-  {
-      return dataCSV.sort((point) => {
-        if (includeOnlyFullRecipes) {
-          if (point.ingredients.split(',').every(elm => ingredientList.some(str => elm.includes(str)))) {
-            createMark(point[""]);
-          }
-          
-        } else {
-          if (point.ingredients.split(',').some(elm => ingredientList.some(str => elm.includes(str)))) {
-            createMark(point[""]);
-          }
-        }
-      });
+  function createSortedSet(ingredientList: String[], includeOnlyFullRecipes: boolean): Mark<FoodMarkAttrs>[] {
+  if (!dataCSV || ingredientList.length === 0) return [];
+  
+  const matchingMarks: Mark<FoodMarkAttrs>[] = [];
+  
+  dataCSV.forEach((point) => {
+    const recipeIngredients = point.Ingredients ? point.Ingredients.toLowerCase().split(',') : [];
     
-  }
+    let isMatch = false;
+    
+    if (includeOnlyFullRecipes) {
+      isMatch = ingredientList.every(ingredient => 
+        recipeIngredients.some(recipeIng => recipeIng.includes(ingredient.toLowerCase()))
+      );
+    } else {
+      isMatch = ingredientList.some(ingredient => 
+        recipeIngredients.some(recipeIng => recipeIng.includes(ingredient.toLowerCase()))
+      );
+    }
+    
+    if (isMatch) {
+      matchingMarks.push(createMark(point[""]));
+    }
+  });
+  
+  return matchingMarks;
+}
 
-  async function triggerFoodView() {
+async function triggerFoodView() {
   if (currentView === "frontPage") {
     try {
       imagesLoaded = false;
@@ -752,6 +973,9 @@ const drawMarks = () => {
       if (!dataCSV) {
         console.log("Loading data for the first time...");
         dataCSV = await d3.csv("src/datasets/food_data.csv");
+        
+        // Extract data properties for axis options
+        extractDataProperties();
       }
       
       console.log("Initializing visualization...");
@@ -850,14 +1074,14 @@ const drawMarks = () => {
         });
 
         await promise;
-        createAxes(
-          transform.rescaleX(
-            d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
-          ),
-          transform.rescaleY(
-            d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
-          )
-        );
+        // createAxes(
+        //   transform.rescaleX(
+        //     d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
+        //   ),
+        //   transform.rescaleY(
+        //     d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
+        //   )
+        // );
       } else {
         alert("zoom in more, too many marks to render"); 
       }
@@ -930,6 +1154,24 @@ const drawMarks = () => {
   }
 }
 
+function extractDataProperties() {
+  if (dataCSV && foodSet) {
+    const hasCalories = dataCSV.some(d => d.Calories !== undefined);
+    if (hasCalories) {
+      axisOptions.push({
+        id: "calories",
+        label: "Calories",
+        valueFn: (mark) => {
+          const id = Number(mark.id);
+          return Number(dataCSV[id]?.Calories) || 0;
+        }
+      });
+    }
+    
+  }
+}
+
+
 
 
   function changeAnimationSettings() {
@@ -955,7 +1197,7 @@ const drawMarks = () => {
     <canvas bind:this={canvas} style="position:absolute; left: 25%;" class:hidden={currentView === "frontPage"}></canvas>
   </div>
 
-  {#if currentView === "food"}
+  {#if currentView === "food" || currentView === "summary"}
     <button
       on:click={triggerSummaryView}
       style="position:absolute; top: 10%; left:10%;">Activate Summary View</button>
@@ -985,7 +1227,7 @@ const drawMarks = () => {
         <div id="entered-ingredients-box-front"></div>
       </div>
       <button on:click={triggerFoodView}>Enter the tool</button>
-      <p>Only include recipes that all ingredients are entered for?</p><input id="ingredient-checkbox" type="checkbox">
+      <p>Only include recipes that all ingredients are entered for?</p><input id="ingredient-checkbox" type="checkbox" checked>
     </div>
   {/if}
 </main>
@@ -1029,5 +1271,89 @@ const drawMarks = () => {
     gap: 10px;
     height: 50px;
     width: 200px;
+  }
+
+  /* Add this to your <style> section */
+#entered-ingredients-box, #entered-ingredients-box-front {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+  min-height: 30px;
+  width: 100%;
+}
+
+.result-added-button {
+  display: inline-block;
+  background-color: #4CAF50;
+  color: white;
+  padding: 5px 10px;
+  margin: 2px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.result-added-button:hover {
+  background-color: #45a049;
+}
+
+#ingredient-bar, #ingredient-bar-front {
+  position: relative;
+  width: 200px;
+  margin-bottom: 20px;
+}
+
+#search-bar, #search-bar-front {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 5px;
+}
+
+[name="ingredient-result-button"] {
+  background-color: white;
+  border: 1px solid #ddd;
+  padding: 5px;
+  margin: 2px 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+[name="ingredient-result-button"]:hover {
+  background-color: #f1f1f1;
+}
+
+.axis-selector {
+    display: flex;
+    align-items: center;
+    margin: 0 10px;
+  }
+  
+  .axis-selector label {
+    margin-right: 8px;
+    font-weight: bold;
+  }
+  
+  .axis-selector select {
+    padding: 5px;
+    min-width: 150px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+  }
+  
+  #axis-controls {
+    background-color: rgba(255, 255, 255, 0.9);
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  }
+  
+  #x-axis-label, #y-axis-label {
+    color: #333;
+    background-color: rgba(255, 255, 255, 0.7);
+    padding: 2px 6px;
+    border-radius: 3px;
   }
 </style>
