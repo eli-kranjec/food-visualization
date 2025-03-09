@@ -46,22 +46,22 @@
   { 
     id: "time", 
     label: "Preparation Time", 
-    valueFn: (mark) => mark.attr("time") * 2
+    valueFn: (mark) => mark.attr("time")
   },
   { 
     id: "placeholder", 
     label: "Randomized", 
-    valueFn: (mark) => mark.attr("placeholder") 
+    valueFn: (mark) => mark.attr("placeholder")
   },
   { 
     id: "ingredientCount", 
     label: "Number of Ingredients", 
-    valueFn: (mark) => mark.attr("ingredients").length  * 5
+    valueFn: (mark) => mark.attr("ingredients").length
   },
   {
     id: "stepCount",
     label: "Number of steps in recipe",
-    valueFn: (mark) => mark.attr("instructions").length * 5
+    valueFn: (mark) => mark.attr("instructions").length
   }
 ];
 
@@ -88,7 +88,7 @@
   let drawTransitionBegun: boolean = false;
   let animateOnlyVisibleMarks: boolean = false;
   let sampleSize: number = 200;
-  let renderLimit: number = 201;
+  let renderLimit: number = 300;
   let selectedIngredients : String[] = new Array;
   let fromFrontPage = true;
   let filteringDropdown : HTMLSelectElement | null;
@@ -96,6 +96,7 @@
 
   type FilterOption = "onlyComplete" | "anyIngredient" | "allIngredients";
   let selectedFilterOption: FilterOption = "allIngredients";  
+  let useSampleSize = true;
 
 $: selectedFilterOption = filteringDropdown?.value as FilterOption;
 
@@ -127,7 +128,7 @@ fetch('src/cleanedIngredients.txt')
   
 
   filteringDropdown = document.getElementById("dropdown") as HTMLSelectElement;
-
+  
   setupIngredientSearchBar(
     "search-bar-front", 
     "ingredient-bar-front", 
@@ -446,9 +447,7 @@ function updateVisualization() {
     .animateTo("x", xOption.valueFn, { duration: 2000 })
     .animateTo("y", yOption.valueFn, { duration: 2000 })
     .animateTo("size", (mark) => {
-      // Scale the size value to be more visually appropriate
       const rawValue = sizeOption.valueFn(mark);
-      // Apply a scaling factor to get reasonable circle sizes
       return Math.max(10, Math.min(40, rawValue / 10));
     }, { duration: 2000 });
   
@@ -924,6 +923,7 @@ const drawMarks = () => {
         return Math.max(10, Math.min(40, rawValue / 10));
       } : (m) => 20);
   
+  
   foodSet.configure({ animationDuration: 500 });
 
   summarySet = createSummaryMarks();
@@ -964,10 +964,10 @@ const drawMarks = () => {
   
   foodSet.configure({
     hitTest: (mark, location) => {
-      const ZOOM_SCALE = 30 / d3.zoomTransform(canvas).k;
+      const ZOOM_SCALE = 200 / (d3.zoomTransform(canvas).k * d3.zoomTransform(canvas).k);
       const x = mark.attr('x');
       const y = mark.attr('y');
-      const size = mark.attr('size') * 2 * ZOOM_SCALE; 
+      const size = mark.attr('size') * ZOOM_SCALE; 
       const distance = Math.sqrt(Math.pow(x - location[0], 2) + Math.pow(y - location[1], 2));
       return distance <= size;
     }
@@ -1014,7 +1014,7 @@ const drawMarks = () => {
 
   const zoom = d3
     .zoom()
-    .scaleExtent([0.1, 10])
+    .scaleExtent([1, 5])
     .on("zoom", (e) => {
       if (e.sourceEvent) {
         scales.transform(e.transform);
@@ -1038,32 +1038,84 @@ const drawMarks = () => {
     return shuffled.slice(0, size).map((point) => createMark(point[""]));
   }
 
-  function createSortedSet(ingredientList: String[], filterSetting : FilterOption): Mark<FoodMarkAttrs>[] {
+  function createSortedSet(ingredientList: String[], filterSetting: FilterOption): Mark<FoodMarkAttrs>[] {
   if (!dataCSV || ingredientList.length === 0) return [];
   
   const matchingMarks: Mark<FoodMarkAttrs>[] = [];
   
   dataCSV.forEach((point) => {
-    const recipeIngredients = point.Ingredients ? point.Ingredients.toLowerCase().split(',') : [];
+    // Parse ingredients properly - check if it's already an array or a string that needs parsing
+    let recipeIngredients: string[] = [];
+    
+    if (point.Ingredients) {
+      // Check if Ingredients is a string that looks like a JSON array
+      if (typeof point.Ingredients === 'string' && 
+          (point.Ingredients.startsWith('[') || point.Ingredients.includes(','))) {
+        try {
+          // Try to parse as JSON if it starts with [
+          if (point.Ingredients.startsWith('[')) {
+            recipeIngredients = JSON.parse(point.Ingredients);
+          } else {
+            // Otherwise split by comma
+            recipeIngredients = point.Ingredients.split(',');
+          }
+        } catch (e) {
+          // Fallback to comma splitting if JSON parse fails
+          recipeIngredients = point.Ingredients.split(',');
+        }
+      } else if (Array.isArray(point.Ingredients)) {
+        // If it's already an array
+        recipeIngredients = point.Ingredients;
+      } else {
+        // Handle as a single string
+        recipeIngredients = [point.Ingredients];
+      }
+    }
+    
+    recipeIngredients = recipeIngredients.map(ing => 
+      typeof ing === 'string' ? ing.toLowerCase().trim() : String(ing).toLowerCase().trim()
+    );
     
     let isMatch = false;
     
     if (filterSetting === "allIngredients") {
       isMatch = ingredientList.every(ingredient => 
-        recipeIngredients.some(recipeIng => recipeIng.includes(ingredient.toLowerCase()))
+        recipeIngredients.some(recipeIng => 
+          recipeIng.includes(ingredient.toLowerCase())
+        )
       );
     } else if (filterSetting === "anyIngredient") {
+      // Recipe must contain AT LEAST ONE of the selected ingredients
       isMatch = ingredientList.some(ingredient => 
-        recipeIngredients.some(recipeIng => recipeIng.includes(ingredient.toLowerCase()))
+        recipeIngredients.some(recipeIng => 
+          recipeIng.includes(ingredient.toLowerCase())
+        )
       );
     } else {
-      isMatch = recipeIngredients.every(recipeIng => ingredientList.some((ingredient) => recipeIng.includes(ingredient.toLowerCase())));
+      // exclude common ingredients or phrases that might appear in instructions
+      const commonExceptions = ["dish", "salt", "pepper", "water", "oil", "garnish"];
+      
+      const significantIngredients = recipeIngredients.filter(ing => 
+        !commonExceptions.some(exception => ing.includes(exception))
+      );
+      
+      isMatch = significantIngredients.length > 0 && 
+        significantIngredients.every(recipeIng => 
+          ingredientList.some(ingredient => 
+            recipeIng.includes(ingredient.toLowerCase())
+          )
+        );
     }
     
     if (isMatch) {
       matchingMarks.push(createMark(point[""]));
     }
   });
+
+  // Apply sample size if set
+  if (useSampleSize && matchingMarks.length > sampleSize) {
+    return matchingMarks.sort(() => Math.random() - 0.5).slice(0, sampleSize);
+  }
   
   return matchingMarks;
 }
