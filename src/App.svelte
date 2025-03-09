@@ -11,7 +11,6 @@
   import * as d3 from "d3";
   // import ingredientsArray from "../ingredients_filtered.js";
   import { onMount } from "svelte";
-  import * as fs from 'fs';
 
   type FoodMarkAttrs = {
     title: Attribute<string>;
@@ -87,7 +86,7 @@
   let currentView: "food" | "ingredients" | "summary" | "frontPage" = "frontPage";
   let drawTransitionBegun: boolean = false;
   let animateOnlyVisibleMarks: boolean = false;
-  let sampleSize: number = 200;
+  let sampleSize: number = 50;
   let renderLimit: number = 300;
   let selectedIngredients : String[] = new Array;
   let fromFrontPage = true;
@@ -167,14 +166,35 @@ function setupIngredientSearchBar(
             b.style.borderRadius = "3px";
             b.style.color = "white";
             enteredIngredientsBox.appendChild(b);
-            foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+            
+            // Show loading indicator
+            showLoadingIndicator();
+            
+            // Update foodSet with animation
+            setTimeout(() => {
+              foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+              updateVisualizationSmoothly();
+              
+              // Hide loading indicator
+              hideLoadingIndicator();
+            }, 100);
             
             b.onclick = () => {
               selectedIngredients = selectedIngredients.filter(ing => ing !== barVal);
               enteredIngredientsBox.removeChild(b);
-              foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+              
+              // Show loading indicator
+              showLoadingIndicator();
+              
+              // Update foodSet with animation
+              setTimeout(() => {
+                foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+                updateVisualizationSmoothly();
+                
+                // Hide loading indicator
+                hideLoadingIndicator();
+              }, 100);
             };
-
           } else {
             console.log("Ingredient not found");
           }
@@ -182,6 +202,7 @@ function setupIngredientSearchBar(
       }
     });
 
+    // Rest of the event listeners remain the same
     searchBar.addEventListener('input', function(event) {
       let buttons = document.getElementsByName("ingredient-result-button");
       buttons.forEach(element => {
@@ -214,13 +235,36 @@ function setupIngredientSearchBar(
             b.onclick = () => {
               selectedIngredients = selectedIngredients.filter(ing => ing !== element);
               enteredIngredientsBox.removeChild(b);
-              foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+              
+              // Show loading indicator
+              showLoadingIndicator();
+              
+              // Update foodSet with animation
+              setTimeout(() => {
+                foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+                updateVisualizationSmoothly();
+                
+                // Hide loading indicator
+                hideLoadingIndicator();
+              }, 100);
             };
             
             searchBar.value = "";
             ingredientBar.removeChild(result);
             
             enteredIngredientsBox.appendChild(b);
+            
+            // Show loading indicator
+            showLoadingIndicator();
+            
+            // Update foodSet with animation
+            setTimeout(() => {
+              foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+              updateVisualizationSmoothly();
+              
+              // Hide loading indicator
+              hideLoadingIndicator();
+            }, 100);
             
             console.log("Selected ingredients:", selectedIngredients);
           };
@@ -234,24 +278,137 @@ function setupIngredientSearchBar(
   if (currentView === "food") {
     selectedIngredients.forEach(element => {
       let b = document.createElement('button');
-            b.textContent = String(element);
-            b.classList.add('result-added-button');
-            b.style.backgroundColor = "#4CAF50";
-            b.style.margin = "2px";
-            b.style.padding = "5px";
-            b.style.borderRadius = "3px";
-            b.style.color = "white";
+      b.textContent = String(element);
+      b.classList.add('result-added-button');
+      b.style.backgroundColor = "#4CAF50";
+      b.style.margin = "2px";
+      b.style.padding = "5px";
+      b.style.borderRadius = "3px";
+      b.style.color = "white";
             
-            b.onclick = () => {
-              selectedIngredients = selectedIngredients.filter(ing => ing !== element);
-              enteredIngredientsBox.removeChild(b);
-              foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
-            };
+      b.onclick = () => {
+        selectedIngredients = selectedIngredients.filter(ing => ing !== element);
+        enteredIngredientsBox.removeChild(b);
+        
+        // Show loading indicator
+        showLoadingIndicator();
+        
+        // Update foodSet with animation
+        setTimeout(() => {
+          foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
+          updateVisualizationSmoothly();
+          
+          // Hide loading indicator
+          hideLoadingIndicator();
+        }, 100);
+      };
 
-            enteredIngredientsBox.appendChild(b);
+      enteredIngredientsBox.appendChild(b);
     });
   }
 }
+
+// New function to show loading indicator
+function showLoadingIndicator() {
+  // Create or show loading indicator element
+  let loadingIndicator = document.getElementById('loading-indicator');
+  
+  if (!loadingIndicator) {
+    loadingIndicator = document.createElement('div');
+    loadingIndicator.id = 'loading-indicator';
+    loadingIndicator.textContent = 'Loading...';
+    loadingIndicator.style.position = 'absolute';
+    loadingIndicator.style.top = '50%';
+    loadingIndicator.style.left = '50%';
+    loadingIndicator.style.transform = 'translate(-50%, -50%)';
+    loadingIndicator.style.padding = '10px';
+    loadingIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    loadingIndicator.style.color = 'white';
+    loadingIndicator.style.borderRadius = '5px';
+    loadingIndicator.style.zIndex = '1000';
+    document.body.appendChild(loadingIndicator);
+  } else {
+    loadingIndicator.style.display = 'block';
+  }
+  
+  // Don't clear the canvas, just fade it a bit to indicate loading
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (ctx) {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+}
+
+// New function to hide loading indicator
+function hideLoadingIndicator() {
+  const loadingIndicator = document.getElementById('loading-indicator');
+  if (loadingIndicator) {
+    loadingIndicator.style.display = 'none';
+  }
+}
+
+// New function for smooth visualization updates
+function updateVisualizationSmoothly() {
+  // First, update data structures
+  if (!foodSet || !dataCSV) return;
+  
+  const xOption = axisOptions.find(opt => opt.id === selectedXAxis);
+  const yOption = axisOptions.find(opt => opt.id === selectedYAxis);
+  const sizeOption = axisOptions.find(opt => opt.id === selectedSize);
+  
+  if (!xOption || !yOption || !sizeOption) return;
+  
+  // Configure animation properties
+  foodSet.configure({ animationDuration: 500 });
+  
+  // Update mark attributes with animations
+  foodSet
+    .animate("x")
+    .animate("y")
+    .animate("size")
+    .animateTo("x", xOption.valueFn, { duration: 800 })
+    .animateTo("y", yOption.valueFn, { duration: 800 })
+    .animateTo("size", (mark) => {
+      const rawValue = sizeOption.valueFn(mark);
+      return Math.max(10, Math.min(40, rawValue / 10));
+    }, { duration: 800 });
+  
+  // Update position maps
+  setTimeout(() => {
+    if (foodPositionMap) {
+      foodPositionMap.invalidate();
+      foodPositionMap.add(foodSet);
+    }
+    
+    // Update zoom constraints based on new mark boundaries
+    const mins = getMins(foodSet);
+    const maxes = getMaxes(foodSet);
+    
+    zoom.translateExtent([
+      [mins[0] - (maxes[0] - mins[0]) * 0.2, mins[1] - (maxes[1] - mins[1]) * 0.2],
+      [maxes[0] + (maxes[0] - mins[0]) * 0.2, maxes[1] + (maxes[1] - mins[1]) * 0.2]
+    ]);
+    
+    // Set up continuous drawing during animation
+    let animationTimer = setInterval(() => {
+      drawMarks();
+    }, 16); // ~60fps
+    
+    // Clean up after animation completes
+    setTimeout(() => {
+      clearInterval(animationTimer);
+      drawMarks(); // Final draw to ensure correct positions
+    }, 850);
+    
+  }, 100);
+  
+  // Update axes labels
+  updateAxisLabels(xOption.label, yOption.label);
+}
+
 
 
 
@@ -578,16 +735,15 @@ function setupCanvas() {
   console.log("Canvas setup complete");
 }
 const drawMarks = () => {
+  if (!canvas) return;
   
-  
-  if (!dataCSV || !canvas) return;
-
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
   if (!ctx) return;
-
+  
   const transform = d3.zoomTransform(canvas);
-  if (currentView === "food") {
+  
+  // Only clear and redraw if we have data to show
+  if (dataCSV && currentView === "food" && foodSet) {
     if (foodPositionMap) foodPositionMap.invalidate();
     
     const visibleMarks = foodSet.filter((mark) => {
@@ -611,57 +767,60 @@ const drawMarks = () => {
       triggerSummaryView();
       drawTransitionBegun = true;
     } else {
-      const groupedMarks = groupMarks(visibleMarks);
-      ctx.resetTransform();
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-      
-      console.log("Drawing", groupedMarks.length, "mark groups");
-      
-      groupedMarks.forEach((group) => {
-        ctx.save();
-        group.forEach((mark) => {
-          const { x, y, img, size } = mark.get();
-          const transformedX = transform.applyX(x);
-          const transformedY = transform.applyY(y);
-          if (img && img.src && img.complete) {
-            ctx.beginPath();
-            ctx.arc(
-              transformedX + size,
-              transformedY + size,
-              size,
-              0,
-              Math.PI * 2,
-              true
-            );
-            ctx.closePath();
-            ctx.clip();
-            ctx.drawImage(
-              img,
-              transformedX,
-              transformedY,
-              size * 2,
-              size * 2
-            );              
-          } else {
-            ctx.beginPath();
-            ctx.arc(
-              transformedX + size,
-              transformedY + size,
-              size,
-              0,
-              Math.PI * 2,
-              true
-            );
-            ctx.fillStyle = "lightgray";
-            ctx.fill();
-            ctx.closePath();
-          }
+      // Only clear the canvas if we have visible marks to draw
+      if (visibleMarks.count() > 0) {
+        ctx.resetTransform();
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+        
+        const groupedMarks = groupMarks(visibleMarks);
+        console.log("Drawing", groupedMarks.length, "mark groups");
+        
+        groupedMarks.forEach((group) => {
+          ctx.save();
+          group.forEach((mark) => {
+            const { x, y, img, size } = mark.get();
+            const transformedX = transform.applyX(x);
+            const transformedY = transform.applyY(y);
+            if (img && img.src && img.complete) {
+              ctx.beginPath();
+              ctx.arc(
+                transformedX + size,
+                transformedY + size,
+                size,
+                0,
+                Math.PI * 2,
+                true
+              );
+              ctx.closePath();
+              ctx.clip();
+              ctx.drawImage(
+                img,
+                transformedX,
+                transformedY,
+                size * 2,
+                size * 2
+              );              
+            } else {
+              ctx.beginPath();
+              ctx.arc(
+                transformedX + size,
+                transformedY + size,
+                size,
+                0,
+                Math.PI * 2,
+                true
+              );
+              ctx.fillStyle = "lightgray";
+              ctx.fill();
+              ctx.closePath();
+            }
+          });
+          ctx.restore();
         });
-        ctx.restore();
-      });
+      }
     }
-  } else if (currentView === "summary") {
+  } else if (currentView === "summary" && summarySet) {
     if (summaryPositionMap) summaryPositionMap.invalidate();
     
     ctx.resetTransform();
@@ -1177,6 +1336,8 @@ const drawMarks = () => {
   if (useSampleSize && matchingMarks.length > sampleSize) {
     return matchingMarks.sort(() => Math.random() - 0.5).slice(0, sampleSize);
   }
+
+  if (matchingMarks.length === 0) return createMarkSet(sampleSize);
   
   return matchingMarks;
 }
