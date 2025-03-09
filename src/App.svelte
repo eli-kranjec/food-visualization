@@ -46,12 +46,12 @@
   { 
     id: "time", 
     label: "Preparation Time", 
-    valueFn: (mark) => mark.attr("time")
+    valueFn: (mark) => mark.attr("time") / 3
   },
   { 
     id: "placeholder", 
     label: "Randomized", 
-    valueFn: (mark) => mark.attr("placeholder")
+    valueFn: (mark) => mark.attr("placeholder") / 3
   },
   { 
     id: "ingredientCount", 
@@ -61,7 +61,7 @@
   {
     id: "stepCount",
     label: "Number of steps in recipe",
-    valueFn: (mark) => mark.attr("instructions").length
+    valueFn: (mark) => mark.attr("instructions").length / 3
   }
 ];
 
@@ -547,11 +547,22 @@ function setupCanvas() {
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
   
+  // Initialize the zoom with constraints based on the initial mark set
+  if (foodSet) {
+    const mins = getMins(foodSet);
+    const maxes = getMaxes(foodSet);
+    
+    // Set the initial translate extent for the zoom behavior
+    zoom.translateExtent([
+      [mins[0] - (maxes[0] - mins[0]) * 0.2, mins[1] - (maxes[1] - mins[1]) * 0.2],
+      [maxes[0] + (maxes[0] - mins[0]) * 0.2, maxes[1] + (maxes[1] - mins[1]) * 0.2]
+    ]);
+  }
+  
   d3.select(canvas as Element)
     .on("click", handleClick)
     .call(zoom);
   
-  // Create the axis controls
   if (currentView !== "frontPage") {
     const axisControls = createAxisControls();
     
@@ -566,7 +577,6 @@ function setupCanvas() {
   
   console.log("Canvas setup complete");
 }
-
 const drawMarks = () => {
   
   
@@ -878,6 +888,15 @@ const drawMarks = () => {
 
       await promise;
       currentView = "summary";
+
+      const mins = getMins(summarySet);
+      const maxes = getMaxes(summarySet);
+    
+      zoom.translateExtent([
+        [mins[0] - (maxes[0] - mins[0]) * 0.2, mins[1] - (maxes[1] - mins[1]) * 0.2],
+        [maxes[0] + (maxes[0] - mins[0]) * 0.2, maxes[1] + (maxes[1] - mins[1]) * 0.2]
+      ]);
+
       drawMarks();
       // foodSet
       //   .update("x", (mark) => mark.attr("time"))
@@ -936,6 +955,13 @@ const drawMarks = () => {
   
   let mins = getMins(foodSet);
   let maxes = getMaxes(foodSet);
+  
+  // Update zoom constraints based on mark boundaries
+  zoom.translateExtent([
+    [mins[0] - (maxes[0] - mins[0]) * 0.2, mins[1] - (maxes[1] - mins[1]) * 0.2],
+    [maxes[0] + (maxes[0] - mins[0]) * 0.2, maxes[1] + (maxes[1] - mins[1]) * 0.2]
+  ]);
+
   scales = new Scales({ animationDuration: 500 })
     .xRange([mins[0], maxes[0]])
     .yRange([mins[0], maxes[0]])
@@ -964,10 +990,10 @@ const drawMarks = () => {
   
   foodSet.configure({
     hitTest: (mark, location) => {
-      const ZOOM_SCALE = 200 / (d3.zoomTransform(canvas).k * d3.zoomTransform(canvas).k);
+      // const ZOOM_SCALE = 200 / (d3.zoomTransform(canvas).k * d3.zoomTransform(canvas).k);
       const x = mark.attr('x');
       const y = mark.attr('y');
-      const size = mark.attr('size') * ZOOM_SCALE; 
+      const size = mark.attr('size') * 2; 
       const distance = Math.sqrt(Math.pow(x - location[0], 2) + Math.pow(y - location[1], 2));
       return distance <= size;
     }
@@ -1001,10 +1027,10 @@ const drawMarks = () => {
     }).add(foodSet);
     foodSet.configure({
       hitTest: (mark, location) => {
-        const ZOOM_SCALE = 30 / d3.zoomTransform(canvas).k;
+        // const ZOOM_SCALE = 30 / d3.zoomTransform(canvas).k;
         let x = mark.attr('x');
         let y = mark.attr('y');
-        let r = mark.attr('size') * 2 * ZOOM_SCALE;
+        let r = mark.attr('size') * 2;
         return Math.sqrt(Math.pow(x - location[0], 2.0) + Math.pow(y - location[1], 2.0)) <= r;
       }
     })
@@ -1013,23 +1039,59 @@ const drawMarks = () => {
   let scales: Scales;
 
   const zoom = d3
-    .zoom()
-    .scaleExtent([1, 5])
-    .on("zoom", (e) => {
-      if (e.sourceEvent) {
-        scales.transform(e.transform);
-        drawMarks();
-        const transform = d3.zoomTransform(canvas);
-        // createAxes(
-        //   transform.rescaleX(
-        //     d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
-        //   ),
-        //   transform.rescaleY(
-        //     d3.scaleLinear().domain([0, canvasHeight]).range([2000, 0])
-        //   )
-        // );
-      }
-    });
+  .zoom()
+  .scaleExtent([1, 1.5])
+  .translateExtent([[0, 0], [canvasWidth, canvasHeight]]) // Basic canvas constraint
+  .on("zoom", (e) => {
+    if (e.sourceEvent) {
+      // Get the current marks set depending on view
+      const currentMarkSet = currentView === "food" ? foodSet : summarySet;
+      
+      // Apply constraints based on data bounds
+      const constrainedTransform = constrainTransformToMarks(e.transform, currentMarkSet);
+      
+      // Update scales with constrained transform
+      scales.transform(constrainedTransform);
+      
+      // Redraw with updated transform
+      drawMarks();
+    }
+  });
+
+  function constrainTransformToMarks(transform: d3.ZoomTransform, markSet: MarkRenderGroup<any>): d3.ZoomTransform {
+  // Get the min/max boundaries of all marks
+  const mins = getMins(markSet);
+  const maxes = getMaxes(markSet);
+  
+  // Add padding (percentage of the range)
+  const paddingX = (maxes[0] - mins[0]) * 0.2;
+  const paddingY = (maxes[1] - mins[1]) * 0.2;
+  
+  // Calculate boundaries with padding
+  const minX = mins[0] - paddingX;
+  const maxX = maxes[0] + paddingX;
+  const minY = mins[1] - paddingY;
+  const maxY = maxes[1] + paddingY;
+  
+  // Calculate the visible width and height based on the current scale
+  const visibleWidth = canvasWidth / transform.k;
+  const visibleHeight = canvasHeight / transform.k;
+  
+  // Calculate the limits for the transform
+  const minTransformX = -maxX + visibleWidth;
+  const maxTransformX = -minX;
+  const minTransformY = -maxY + visibleHeight;
+  const maxTransformY = -minY;
+  
+  // Constrain the transform values
+  let x = Math.min(maxTransformX, Math.max(minTransformX, transform.x));
+  let y = Math.min(maxTransformY, Math.max(minTransformY, transform.y));
+  
+  // Return a new transform with constrained values
+  return d3.zoomIdentity.translate(x, y).scale(transform.k);
+}
+
+
 
   function createMarkSet(size: number): Mark<FoodMarkAttrs>[] {
     if (!dataCSV) return [];
@@ -1085,7 +1147,6 @@ const drawMarks = () => {
         )
       );
     } else if (filterSetting === "anyIngredient") {
-      // Recipe must contain AT LEAST ONE of the selected ingredients
       isMatch = ingredientList.some(ingredient => 
         recipeIngredients.some(recipeIng => 
           recipeIng.includes(ingredient.toLowerCase())
@@ -1231,6 +1292,13 @@ async function triggerFoodView() {
         });
 
         await promise;
+        const mins = getMins(foodSet);
+        const maxes = getMaxes(foodSet);
+    
+        zoom.translateExtent([
+          [mins[0] - (maxes[0] - mins[0]) * 0.2, mins[1] - (maxes[1] - mins[1]) * 0.2],
+          [maxes[0] + (maxes[0] - mins[0]) * 0.2, maxes[1] + (maxes[1] - mins[1]) * 0.2]
+        ]);
         // createAxes(
         //   transform.rescaleX(
         //     d3.scaleLinear().domain([0, canvasWidth]).range([0, 2000])
@@ -1350,7 +1418,7 @@ function extractDataProperties() {
 <main>
   <div id="visualization-box">
     {#key imagesLoaded}
-      <div class="loading-screen" hidden={imagesLoaded}>Loading...</div>
+      <div class="loading-screen" hidden={imagesLoaded || frontPage()}>Loading...</div>
     {/key}
     <svg id="axes" style="position: absolute; left: 20%; width: 70%;" class:hidden={currentView === "frontPage"}></svg>
     <canvas bind:this={canvas} style="position:absolute; left: 25%;" class:hidden={currentView === "frontPage"}></canvas>
