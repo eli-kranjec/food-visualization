@@ -11,6 +11,7 @@
   import * as d3 from "d3";
   // import ingredientsArray from "../ingredients_filtered.js";
   import { onMount } from "svelte";
+  import { GoogleGenerativeAI } from "@google/generative-ai";
 
   type FoodMarkAttrs = {
     title: Attribute<string>;
@@ -108,7 +109,7 @@ fetch('src/cleanedIngredients.txt')
   })
   .then(text => {
     ingredientsArray = text.split('\n').filter(ingredient => ingredient.trim().length > 0);
-    console.log(`Loaded ${ingredientsArray.length} ingredients`);
+    // console.log(`Loaded ${ingredientsArray.length} ingredients`);
   })
   .catch(error => {
     console.error('Error loading ingredients:', error);
@@ -266,7 +267,7 @@ function setupIngredientSearchBar(
               hideLoadingIndicator();
             }, 100);
             
-            console.log("Selected ingredients:", selectedIngredients);
+            // console.log("Selected ingredients:", selectedIngredients);
           };
 
           ingredientBar.appendChild(result);
@@ -361,6 +362,8 @@ function updateVisualizationSmoothly() {
   
   if (!xOption || !yOption || !sizeOption) return;
   
+  zoom.scaleExtent([1, Math.sqrt(1 + Math.log10(foodSet.count()))]);
+  
   // Configure animation properties
   foodSet.configure({ animationDuration: 500 });
   
@@ -394,13 +397,13 @@ function updateVisualizationSmoothly() {
     
     // Set up continuous drawing during animation
     let animationTimer = setInterval(() => {
-      drawMarks();
+      requestAnimationFrame(drawMarks);
     }, 16); // ~60fps
     
     // Clean up after animation completes
     setTimeout(() => {
       clearInterval(animationTimer);
-      drawMarks(); // Final draw to ensure correct positions
+      requestAnimationFrame(drawMarks); // Final draw to ensure correct positions
     }, 850);
     
   }, 100);
@@ -590,12 +593,12 @@ function updateVisualizationSmoothly() {
 
 function updateVisualization() {
   if (!foodSet || !dataCSV) return;
-  
   const xOption = axisOptions.find(opt => opt.id === selectedXAxis);
   const yOption = axisOptions.find(opt => opt.id === selectedYAxis);
   const sizeOption = axisOptions.find(opt => opt.id === selectedSize);
   
   if (!xOption || !yOption || !sizeOption) return;
+  
   
   foodSet
     .animate("x")
@@ -607,6 +610,14 @@ function updateVisualization() {
       const rawValue = sizeOption.valueFn(mark);
       return Math.max(10, Math.min(40, rawValue / 10));
     }, { duration: 2000 });
+  
+  const mins = getMins(foodSet);
+  const maxes = getMaxes(foodSet);
+    
+  zoom.translateExtent([
+    [mins[0] - (maxes[0] - mins[0]) * 0.2, mins[1] - (maxes[1] - mins[1]) * 0.2],
+    [maxes[0] + (maxes[0] - mins[0]) * 0.2, maxes[1] + (maxes[1] - mins[1]) * 0.2]
+    ]);
   
   if (currentView === "summary") {
     const originalPositions = new Map();
@@ -647,12 +658,12 @@ function updateVisualization() {
   }, 2000);
   
   let animationTimer = setInterval(() => {
-    drawMarks();
+    requestAnimationFrame(drawMarks);
   }, 16);
   
   setTimeout(() => {
     clearInterval(animationTimer);
-    drawMarks(); // One final draw to ensure correct positions
+    requestAnimationFrame(drawMarks); // One final draw to ensure correct positions
   }, 2100);
   
   updateAxisLabels(xOption.label, yOption.label);
@@ -692,9 +703,8 @@ function updateAxisLabels(xLabel: string, yLabel: string) {
   document.body.appendChild(xAxisLabel);
   document.body.appendChild(yAxisLabel);
 }
-
 function setupCanvas() {
-  console.log("Setting up canvas");
+  // console.log("Setting up canvas");
   
   if (!canvas) {
     console.error("Canvas element not found");
@@ -730,13 +740,37 @@ function setupCanvas() {
     if (xOption && yOption) {
       updateAxisLabels(xOption.label, yOption.label);
     }
+    
+    // Always ensure the sidebar exists
+    ensureSidebarExists();
+  }
+}
+
+// New function to ensure the sidebar exists
+function ensureSidebarExists() {
+  let sidebar = document.getElementById("recipe-details-sidebar");
+  
+  if (!sidebar) {
+    console.log("Creating new recipe details sidebar");
+    sidebar = document.createElement('div');
+    sidebar.id = 'recipe-details-sidebar';
+    sidebar.className = 'details-sidebar';
+    
+    const clickedMarkBox = document.createElement('div');
+    clickedMarkBox.id = 'clicked-mark-box';
+    
+    sidebar.appendChild(clickedMarkBox);
+    document.body.appendChild(sidebar);
+  } else {
+    console.log("Recipe details sidebar already exists");
   }
   
-  console.log("Canvas setup complete");
+  return sidebar;
 }
 const drawMarks = () => {
   if (!canvas) return;
   
+  console.log(imagesLoaded);
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return;
   
@@ -763,7 +797,7 @@ const drawMarks = () => {
       !drawTransitionBegun &&
       currentView === "food"
     ) {
-      console.log("Too many marks visible, triggering summary view");
+      // console.log("Too many marks visible, triggering summary view");
       triggerSummaryView();
       drawTransitionBegun = true;
     } else {
@@ -774,7 +808,6 @@ const drawMarks = () => {
         ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
         
         const groupedMarks = groupMarks(visibleMarks);
-        console.log("Drawing", groupedMarks.length, "mark groups");
         
         groupedMarks.forEach((group) => {
           ctx.save();
@@ -1107,7 +1140,7 @@ const drawMarks = () => {
   summarySet = createSummaryMarks();
   summarySet.configure({ animationDuration: 1000 });
   
-  console.log("Preloading images...");
+  // console.log("Preloading images...");
   await preloadImages(dataCSV, true);
   
   imagesLoaded = true;
@@ -1137,7 +1170,7 @@ const drawMarks = () => {
       if (!!foodPositionMap) foodPositionMap.invalidate();
     });
 
-  console.log("Creating position maps...");
+  // console.log("Creating position maps...");
   
   summaryPositionMap = new PositionMap({
     maximumHitTestDistance: 20,
@@ -1158,13 +1191,13 @@ const drawMarks = () => {
     }
   });
   
-  console.log("Setting up ticker...");
+  // console.log("Setting up ticker...");
   
   ticker = new Ticker([foodSet, scales]).onChange(() => {
     requestAnimationFrame(drawMarks);
   });
   
-  console.log("Initialization complete");
+  // console.log("Initialization complete");
 }
 
 
@@ -1213,7 +1246,7 @@ const drawMarks = () => {
       scales.transform(constrainedTransform);
       
       // Redraw with updated transform
-      drawMarks();
+      requestAnimationFrame(drawMarks);
     }
   });
 
@@ -1350,19 +1383,17 @@ async function triggerFoodView() {
       currentView = "food";
       
       if (!dataCSV) {
-        console.log("Loading data for the first time...");
+        // console.log("Loading data for the first time...");
         dataCSV = await d3.csv("src/datasets/food_data.csv");
         
         // Extract data properties for axis options
         extractDataProperties();
       }
       
-      console.log("Initializing visualization...");
       await initVisualization();
       
       setupCanvas();
       
-      console.log("Drawing marks for the first time...");
       drawMarks();
       
       fromFrontPage = false;
@@ -1475,7 +1506,7 @@ async function triggerFoodView() {
   }
 }
 
-  function handleClick(event: MouseEvent) {
+function handleClick(event: MouseEvent) {
     const rect = canvas.getBoundingClientRect();
     // let xRange = (450 + 19);
     // let yRange = (17 - 311);
@@ -1483,10 +1514,8 @@ async function triggerFoodView() {
     const X_SCALAR = 0.5;
     const Y_SCALAR = 0.5;
 
-
     const scaleX = (canvas.width / rect.width);
     const scaleY = canvas.height / rect.height;
-
   
     const canvasX = (((event.clientX  - rect.left) * X_SCALAR) - 19.76) * scaleX;
     const canvasY = (((event.clientY - rect.bottom) * Y_SCALAR) + 305) * scaleY;
@@ -1515,52 +1544,86 @@ async function triggerFoodView() {
         setTimeout(() => {
           triggerFoodView();
         }, 1200);
-    }
-  } else if (currentView === "food") {
-    const clickedMark = foodPositionMap.hitTest([dataX, dataY]);
-    
-    if (clickedMark) {
-      console.log("Food item:", clickedMark.attr("name"));
-      let clickedMarkDisplayBox = document.getElementById("clicked-mark-box");
-      if (clickedMarkDisplayBox) {
-        clickedMarkDisplayBox.innerHTML = " ";
-
-        let imgSrc = clickedMark.attr('img').src;
-        let img = document.createElement('img');
-        let p = document.createElement('p');
-        let textNode = document.createTextNode("Clicked Recipe : " + clickedMark.attr("name"));
-        p.appendChild(textNode);
-        img.src = imgSrc;
-        img.width /= 2;
-        img.height /= 2;
-
-        clickedMarkDisplayBox.appendChild(img);
-        clickedMarkDisplayBox.appendChild(p);
-
-      } 
-    }
-  }
-}
-
-function extractDataProperties() {
-  if (dataCSV && foodSet) {
-    const hasCalories = dataCSV.some(d => d.Calories !== undefined);
-    if (hasCalories) {
-      axisOptions.push({
-        id: "calories",
-        label: "Calories",
-        valueFn: (mark) => {
-          const id = Number(mark.id);
-          return Number(dataCSV[id]?.Calories) || 0;
+      }
+    } else if (currentView === "food") {
+      const clickedMark = foodPositionMap.hitTest([dataX, dataY]);
+      
+      if (clickedMark) {
+        console.log("Food item:", clickedMark.attr("name"));
+        let clickedMarkDisplayBox = document.getElementById("clicked-mark-box");
+        let detailsSidebar = document.getElementById("recipe-details-sidebar");
+        console.log("Initial sidebar state:", detailsSidebar?.style.display, detailsSidebar?.classList);
+        if (detailsSidebar){
+         detailsSidebar.style.transform = "translateX(0)";
+          detailsSidebar.style.right = "0";
         }
-      });
+
+        if (clickedMarkDisplayBox && detailsSidebar) {
+          // Clear the previous content
+          clickedMarkDisplayBox.innerHTML = "";
+
+          // Create a recipe card container
+          let recipeCard = document.createElement('div');
+          recipeCard.className = 'recipe-card';
+          
+          // Add image
+          let imgSrc = clickedMark.attr('img').src;
+          let img = document.createElement('img');
+          img.src = imgSrc;
+          img.className = 'recipe-image';
+          
+          // Add recipe title
+          let titleDiv = document.createElement('div');
+          titleDiv.className = 'recipe-title';
+          let title = document.createElement('h3');
+          title.textContent = clickedMark.attr("name");
+          titleDiv.appendChild(title);
+          
+          // Create close button
+          let closeButton = document.createElement('button');
+          closeButton.className = 'close-button';
+          closeButton.textContent = '×';
+          closeButton.onclick = function() {
+            detailsSidebar.classList.remove('active');
+            detailsSidebar.style.transform = "translateX(100%)";
+          };
+          
+          // Assemble the recipe card
+          recipeCard.appendChild(closeButton);
+          recipeCard.appendChild(img);
+          recipeCard.appendChild(titleDiv);
+          
+          // Add to the display box
+          clickedMarkDisplayBox.appendChild(recipeCard);
+          
+          // Make the sidebar visible by adding the active class
+          detailsSidebar.classList.add('active');
+          
+          console.log("Sidebar should be visible now with active class:", detailsSidebar.classList.contains('active'));
+        } else {
+          console.error("Could not find clickedMarkDisplayBox or detailsSidebar elements");
+          console.log("clickedMarkDisplayBox:", clickedMarkDisplayBox);
+          console.log("detailsSidebar:", detailsSidebar);
+        }
+      }
     }
-    
-  }
 }
 
-
-
+  function extractDataProperties() {
+    if (dataCSV && foodSet) {
+      const hasCalories = dataCSV.some(d => d.Calories !== undefined);
+      if (hasCalories) {
+        axisOptions.push({
+          id: "calories",
+          label: "Calories",
+          valueFn: (mark) => {
+            const id = Number(mark.id);
+            return Number(dataCSV[id]?.Calories) || 0;
+          }
+        });
+      }
+    }
+  }
 
   function changeAnimationSettings() {
     animateOnlyVisibleMarks = !animateOnlyVisibleMarks;
@@ -1578,144 +1641,442 @@ function extractDataProperties() {
 
 <main>
   <div id="visualization-box">
-    {#key imagesLoaded}
-      <div class="loading-screen" hidden={imagesLoaded || frontPage()}>Loading...</div>
+    {#key imagesLoaded && currentView}
+    <div hidden={imagesLoaded || currentView === "frontPage"}>
+      <div class="loading-screen">
+        <div class="loader"></div>
+        <p>Loading your culinary adventure...</p>
+      </div>
+    </div>
     {/key}
     <svg id="axes" style="position: absolute; left: 20%; width: 70%;" class:hidden={currentView === "frontPage"}></svg>
     <canvas bind:this={canvas} style="position:absolute; left: 25%;" class:hidden={currentView === "frontPage"}></canvas>
   </div>
 
   {#if currentView === "food" || currentView === "summary"}
-    <button
-      on:click={triggerSummaryView}
-      style="position:absolute; top: 10%; left:10%;">Activate Summary View</button>
-    <button
-      on:click={triggerFoodView}
-      style="position:absolute; top: 30%; left:10%;">Activate Food View</button>
-    <button
-      on:click={changeAnimationSettings}
-      style="position:absolute; top: 40%; left:5%;"
-      >Change animation of visible marks
-    </button>
+    <div id="recipe-details-sidebar" class="details-sidebar">
+      <div id="clicked-mark-box"></div>
+    </div>
 
-    <div id="clicked-mark-box" style="position:absolute; top: 50%; left:1%; width: 50px;"></div>
-
-    <div id="ingredient-bar" style="position:absolute; top: 60%; right:0.01%; width: 150px;">
-      <input id="search-bar" type="text" placeholder="Enter more ingredients...">
-      <div id="entered-ingredients-box" style="max-width: 150px;"></div>
+    <div id="ingredient-bar">
+      <h3>Filter by Ingredients</h3>
+      <input id="search-bar" type="text" placeholder="Search ingredients...">
+      <div id="entered-ingredients-box"></div>
     </div>
   {/if}
 
   {#if currentView === "frontPage"}
-    <div class="front-page" style="z-index: 11;">
-      <h1>Welcome to FoodTable!</h1>
-      <h2>Click the button below to enter (will add more to this page dw)</h2>
-      <div id="ingredient-bar-front">
-        <input id="search-bar-front" type="text" placeholder="Enter an ingredient...">
-        <div id="entered-ingredients-box-front"></div>
+    <div class="front-page">
+      <div class="front-page-content">
+        <div class="logo-container">
+          <span class="logo-icon">🍽️</span>
+          <h1>FoodTable</h1>
+        </div>
+        <h2>Discover recipes based on ingredients you have</h2>
+        
+        <div id="ingredient-bar-front">
+          <input id="search-bar-front" type="text" placeholder="Enter an ingredient...">
+          <div id="entered-ingredients-box-front"></div>
+        </div>
+        
+        <div class="filter-options">
+          <select id="dropdown">
+            <option value="onlyComplete">Only show recipes with all entered ingredients</option>
+            <option value="anyIngredient">Show recipes with any entered ingredient</option>
+            <option value="allIngredients">Only show recipes with ALL entered ingredients</option>
+          </select>
+        </div>
+        
+        <button class="primary-button" on:click={triggerFoodView}>
+          <span>Explore Recipes</span>
+          <span class="button-icon">→</span>
+        </button>
       </div>
-      <button on:click={triggerFoodView}>Enter the tool</button>
-      <select id="dropdown">
-        <option value="onlyComplete"> Only show recipes for which you've entered all ingredients</option>
-        <option value="anyIngredient"> Show all recipes that feature an entered ingredient</option>
-        <option value="allIngredients"> Only show recipes that feature ALL entered ingredients</option>
-      </select>
     </div>
   {/if}
 </main>
 
 <style>
+  :root {
+    --primary-color: #ff6b6b;
+    --primary-dark: #ff5252;
+    --secondary-color: #4ecdc4;
+    --secondary-dark: #3ab7ae;
+    --accent-color: #f9c80e;
+    --dark-color: #2f4858;
+    --light-color: #f7f7f7;
+    --box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    --card-radius: 12px;
+    --transition: all 0.3s ease;
+  }
+
+  * {
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--light-color);
+    color: var(--dark-color);
+  }
+
   main {
-    text-align: center;
-    padding: 1em;
-    max-width: 240px;
-    margin: 0 auto;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    position: relative;
+    overflow: hidden;
   }
   
+  /* Canvas Styling */
   canvas {
     z-index: 10;
     image-rendering: optimizeSpeed;
   }
   
-  .loading-screen {
-    background-color: white;
-  }
-
-  canvas,
+  /* Loading Screen */
   .loading-screen {
     position: absolute;
-    bottom: 5%;
-    left: 30%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    border-radius: var(--card-radius);
+    box-shadow: var(--box-shadow);
+    z-index: 100;
+    width: 300px;
+  }
+
+  .loader {
+    border: 5px solid #f3f3f3;
+    border-top: 5px solid var(--primary-color);
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: spin 2s linear infinite;
+    margin-bottom: 1rem;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
   }
 
   .hidden {
     display: none !important;
   }
 
-  #entered-ingredients-box {
+  /* Front Page Styling */
+  .front-page {
     position: absolute;
-    top: -100px;
+    top: 0;
     left: 0;
-    right: 0;
-    padding: 10px;
+    width: 100%;
+    height: 100%;
     display: flex;
-    flex-direction: column-reverse;
-    gap: 10px;
-    height: 50px;
-    width: 200px;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #fff6e5 0%, #ffedf2 100%);
+    z-index: 11;
   }
 
-#entered-ingredients-box, #entered-ingredients-box-front {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 10px;
-  min-height: 30px;
-  max-width: 500px;
-}
+  .front-page-content {
+    max-width: 600px;
+    padding: 2.5rem;
+    text-align: center;
+    background-color: white;
+    border-radius: var(--card-radius);
+    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1);
+  }
 
-.result-added-button {
-  display: inline-block;
-  background-color: #4CAF50;
-  color: white;
-  padding: 5px 10px;
-  margin: 2px;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-}
+  .logo-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
 
-.result-added-button:hover {
-  background-color: #45a049;
-}
+  .logo-icon {
+    font-size: 2.5rem;
+    margin-right: 0.5rem;
+  }
 
-#ingredient-bar, #ingredient-bar-front {
-  position: relative;
-  width: 200px;
-  margin-bottom: 20px;
-}
+  .front-page h1 {
+    color: var(--primary-color);
+    font-size: 3rem;
+    margin: 0;
+  }
 
-#search-bar, #search-bar-front {
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 5px;
-}
+  .front-page h2 {
+    color: var(--dark-color);
+    font-size: 1.2rem;
+    font-weight: normal;
+    margin-bottom: 2rem;
+  }
 
-[name="ingredient-result-button"] {
+  .primary-button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 14px 28px;
+    font-size: 1rem;
+    border-radius: 30px;
+    cursor: pointer;
+    transition: var(--transition);
+    margin-top: 2rem;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .button-icon {
+    font-size: 1.2rem;
+    transition: transform 0.3s ease;
+  }
+
+  .primary-button:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(255, 107, 107, 0.4);
+  }
+
+  .primary-button:hover .button-icon {
+    transform: translateX(4px);
+  }
+
+  /* Ingredient Bar Styling */
+  #ingredient-bar, #ingredient-bar-front {
+    position: relative;
+    width: 100%;
+    margin-bottom: 20px;
+  }
+
+  #ingredient-bar {
+    position: absolute;
+    top: 5%;
+    right: 2%;
+    width: 250px;
+    background-color: white;
+    padding: 20px;
+    border-radius: var(--card-radius);
+    box-shadow: var(--box-shadow);
+    z-index: 20;
+  }
+
+  #ingredient-bar h3 {
+    margin-top: 0;
+    color: var(--primary-color);
+    font-size: 1.1rem;
+    margin-bottom: 15px;
+    text-align: center;
+  }
+
+  #search-bar, #search-bar-front {
+    width: 100%;
+    padding: 12px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 30px;
+    font-size: 1rem;
+    transition: var(--transition);
+    margin-bottom: 10px;
+  }
+
+  #search-bar:focus, #search-bar-front:focus {
+    outline: none;
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.2);
+  }
+
+  #entered-ingredients-box, #entered-ingredients-box-front {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    min-height: 30px;
+  }
+
+  .result-added-button {
+    display: inline-flex;
+    align-items: center;
+    background-color: var(--secondary-color);
+    color: white;
+    padding: 8px 12px;
+    margin: 2px;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: var(--transition);
+  }
+
+  .result-added-button:hover {
+    background-color: var(--secondary-dark);
+    transform: translateY(-1px);
+  }
+
+  [name="ingredient-result-button"] {
+    background-color: white;
+    border: 1px solid #e0e0e0;
+    padding: 10px 15px;
+    margin: 5px 0;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: var(--transition);
+  }
+
+  [name="ingredient-result-button"]:hover {
+    background-color: #f9f9f9;
+    border-color: #ccc;
+    transform: translateY(-1px);
+  }
+
+  /* Dropdown Styling */
+  .filter-options {
+    margin: 1.5rem 0;
+  }
+
+  select {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    background-color: white;
+    font-size: 0.9rem;
+    color: var(--dark-color);
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%232f4858' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 15px center;
+  }
+
+  select:focus {
+    outline: none;
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.2);
+  }
+
+  .details-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 400px;
+  height: 100vh;
   background-color: white;
-  border: 1px solid #ddd;
-  padding: 5px;
-  margin: 2px 0;
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
+  box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform 0.3s ease-in-out;
 }
 
-[name="ingredient-result-button"]:hover {
-  background-color: #f1f1f1;
+.details-sidebar.active {
+  transform: translateX(0) !important;
 }
 
-.axis-selector {
+  /* Recipe Card Styling */
+  #clicked-mark-box {
+    padding: 0;
+    height: 100%;
+  }
+
+  .recipe-card {
+    height: 100%;
+    background-color: white;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .close-button {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: var(--dark-color);
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: var(--transition);
+  }
+
+  .close-button:hover {
+    background-color: #f1f1f1;
+    transform: scale(1.1);
+  }
+
+  .recipe-header {
+    position: relative;
+  }
+
+  .recipe-image {
+    width: 100%;
+    height: 250px;
+    object-fit: cover;
+  }
+
+  .recipe-title {
+    padding: 20px;
+    background-color: var(--dark-color);
+    color: white;
+  }
+
+  .recipe-title h3 {
+    margin: 0;
+    font-size: 1.5rem;
+  }
+
+  .recipe-content {
+    padding: 25px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .recipe-section {
+    margin-bottom: 25px;
+  }
+
+  .recipe-section h4 {
+    color: var(--primary-color);
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.2rem;
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 8px;
+    display: inline-block;
+  }
+
+  .recipe-section p {
+    margin: 0;
+    line-height: 1.7;
+    color: #444;
+  }
+
+  /* Axis Controls Styling */
+  .axis-selector {
     display: flex;
     align-items: center;
     margin: 0 10px;
@@ -1724,27 +2085,65 @@ function extractDataProperties() {
   .axis-selector label {
     margin-right: 8px;
     font-weight: bold;
+    color: var(--dark-color);
   }
   
   .axis-selector select {
-    padding: 5px;
+    padding: 8px 12px;
     min-width: 150px;
-    border-radius: 4px;
+    border-radius: 6px;
     border: 1px solid #ddd;
   }
   
   #axis-controls {
-    background-color: rgba(255, 255, 255, 0.9);
-    border: 1px solid #ddd;
-    border-radius: 5px;
-    padding: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    background-color: white;
+    border-radius: 8px;
+    padding: 15px;
+    box-shadow: var(--box-shadow);
+    display: flex;
+    align-items: center;
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 15;
   }
   
   #x-axis-label, #y-axis-label {
-    color: #333;
-    background-color: rgba(255, 255, 255, 0.7);
-    padding: 2px 6px;
-    border-radius: 3px;
+    color: var(--dark-color);
+    background-color: rgba(255, 255, 255, 0.9);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: 500;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Responsive Adjustments */
+  @media (max-width: 768px) {
+    .front-page-content {
+      padding: 1.5rem;
+      max-width: 90%;
+    }
+
+    .front-page h1 {
+      font-size: 2.2rem;
+    }
+
+    .front-page h2 {
+      font-size: 1rem;
+    }
+
+    #ingredient-bar {
+      width: 200px;
+      right: 1%;
+    }
+
+    .details-sidebar {
+      width: 100%;
+    }
+
+    .recipe-image {
+      height: 180px;
+    }
   }
 </style>
