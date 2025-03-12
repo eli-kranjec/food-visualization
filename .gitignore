@@ -2,3 +2,5 @@ node_modules
 node_modules
 AppWithSearch.txt
 key.ts
+ingredients_filtered.js
+app_with_offscreenCanvas.txt
