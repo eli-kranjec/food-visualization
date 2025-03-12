@@ -67,7 +67,6 @@
   valueFn: (mark: Mark<FoodMarkAttrs>) => number;
 };
 
-// Add this to your component's variables section
   let axisOptions: AxisOption[] = [
   { 
     id: "time", 
@@ -194,15 +193,12 @@ function setupIngredientSearchBar(
             b.style.color = "white";
             enteredIngredientsBox.appendChild(b);
             
-            // Show loading indicator
             showLoadingIndicator();
             
-            // Update foodSet with animation
             setTimeout(() => {
               foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
               updateVisualizationSmoothly();
               
-              // Hide loading indicator
               hideLoadingIndicator();
             }, 100);
             
@@ -210,15 +206,12 @@ function setupIngredientSearchBar(
               selectedIngredients = selectedIngredients.filter(ing => ing !== barVal);
               enteredIngredientsBox.removeChild(b);
               
-              // Show loading indicator
               showLoadingIndicator();
               
-              // Update foodSet with animation
               setTimeout(() => {
                 foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
                 updateVisualizationSmoothly();
                 
-                // Hide loading indicator
                 hideLoadingIndicator();
               }, 100);
             };
@@ -229,7 +222,6 @@ function setupIngredientSearchBar(
       }
     });
 
-    // Rest of the event listeners remain the same
     searchBar.addEventListener('input', function(event) {
       let buttons = document.getElementsByName("ingredient-result-button");
       buttons.forEach(element => {
@@ -263,15 +255,12 @@ function setupIngredientSearchBar(
               selectedIngredients = selectedIngredients.filter(ing => ing !== element);
               enteredIngredientsBox.removeChild(b);
               
-              // Show loading indicator
               showLoadingIndicator();
               
-              // Update foodSet with animation
               setTimeout(() => {
                 foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
                 updateVisualizationSmoothly();
                 
-                // Hide loading indicator
                 hideLoadingIndicator();
               }, 100);
             };
@@ -281,15 +270,12 @@ function setupIngredientSearchBar(
             
             enteredIngredientsBox.appendChild(b);
             
-            // Show loading indicator
             showLoadingIndicator();
             
-            // Update foodSet with animation
             setTimeout(() => {
               foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
               updateVisualizationSmoothly();
               
-              // Hide loading indicator
               hideLoadingIndicator();
             }, 100);
             
@@ -317,15 +303,12 @@ function setupIngredientSearchBar(
         selectedIngredients = selectedIngredients.filter(ing => ing !== element);
         enteredIngredientsBox.removeChild(b);
         
-        // Show loading indicator
         showLoadingIndicator();
         
-        // Update foodSet with animation
         setTimeout(() => {
           foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
           updateVisualizationSmoothly();
           
-          // Hide loading indicator
           hideLoadingIndicator();
         }, 100);
       };
@@ -335,9 +318,7 @@ function setupIngredientSearchBar(
   }
 }
 
-// New function to show loading indicator
 function showLoadingIndicator() {
-  // Create or show loading indicator element
   let loadingIndicator = document.getElementById('loading-indicator');
   
   if (!loadingIndicator) {
@@ -358,7 +339,6 @@ function showLoadingIndicator() {
     loadingIndicator.style.display = 'block';
   }
   
-  // Don't clear the canvas, just fade it a bit to indicate loading
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (ctx) {
     ctx.save();
@@ -369,7 +349,6 @@ function showLoadingIndicator() {
   }
 }
 
-// New function to hide loading indicator
 function hideLoadingIndicator() {
   const loadingIndicator = document.getElementById('loading-indicator');
   if (loadingIndicator) {
@@ -377,9 +356,7 @@ function hideLoadingIndicator() {
   }
 }
 
-// New function for smooth visualization updates
 function updateVisualizationSmoothly() {
-  // First, update data structures
   if (!foodSet || !dataCSV) return;
   
   const xOption = axisOptions.find(opt => opt.id === selectedXAxis);
@@ -390,10 +367,8 @@ function updateVisualizationSmoothly() {
   
   zoom.scaleExtent([1, Math.sqrt(1 + Math.log10(foodSet.count()))]);
   
-  // Configure animation properties
   foodSet.configure({ animationDuration: 500 });
   
-  // Update mark attributes with animations
   foodSet
     .animate("x")
     .animate("y")
@@ -405,14 +380,12 @@ function updateVisualizationSmoothly() {
       return Math.max(10, Math.min(40, rawValue / 10));
     }, { duration: 800 });
   
-  // Update position maps
   setTimeout(() => {
     if (foodPositionMap) {
       foodPositionMap.invalidate();
       foodPositionMap.add(foodSet);
     }
     
-    // Update zoom constraints based on new mark boundaries
     const mins = getMins(foodSet);
     const maxes = getMaxes(foodSet);
     
@@ -421,20 +394,17 @@ function updateVisualizationSmoothly() {
       [maxes[0] + (maxes[0] - mins[0]) * 0.2, maxes[1] + (maxes[1] - mins[1]) * 0.2]
     ]);
     
-    // Set up continuous drawing during animation
     let animationTimer = setInterval(() => {
       requestAnimationFrame(drawMarks);
-    }, 16); // ~60fps
+    }, 16);
     
-    // Clean up after animation completes
     setTimeout(() => {
       clearInterval(animationTimer);
-      requestAnimationFrame(drawMarks); // Final draw to ensure correct positions
+      requestAnimationFrame(drawMarks); 
     }, 850);
     
   }, 100);
   
-  // Update axes labels
   updateAxisLabels(xOption.label, yOption.label);
 }
 
@@ -580,7 +550,6 @@ function updateVisualizationSmoothly() {
   yAxisDiv.appendChild(yAxisLabel);
   yAxisDiv.appendChild(yAxisSelect);
   
-  // Add Size Selector
   const sizeDiv = document.createElement('div');
   sizeDiv.className = 'axis-selector';
   
@@ -689,7 +658,7 @@ function updateVisualization() {
   
   setTimeout(() => {
     clearInterval(animationTimer);
-    requestAnimationFrame(drawMarks); // One final draw to ensure correct positions
+    requestAnimationFrame(drawMarks); 
   }, 2100);
   
   updateAxisLabels(xOption.label, yOption.label);
@@ -697,7 +666,6 @@ function updateVisualization() {
 
 
 function updateAxisLabels(xLabel: string, yLabel: string) {
-  // Remove any existing labels
   const existingXLabel = document.getElementById('x-axis-label');
   const existingYLabel = document.getElementById('y-axis-label');
   
@@ -714,7 +682,6 @@ function updateAxisLabels(xLabel: string, yLabel: string) {
   xAxisLabel.style.fontWeight = 'bold';
   xAxisLabel.textContent = xLabel;
   
-  // Create Y axis label
   const yAxisLabel = document.createElement('div');
   yAxisLabel.id = 'y-axis-label';
   yAxisLabel.style.position = 'absolute';
@@ -740,12 +707,10 @@ function setupCanvas() {
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
   
-  // Initialize the zoom with constraints based on the initial mark set
   if (foodSet) {
     const mins = getMins(foodSet);
     const maxes = getMaxes(foodSet);
     
-    // Set the initial translate extent for the zoom behavior
     zoom.translateExtent([
       [mins[0] - (maxes[0] - mins[0]) * 0.2, mins[1] - (maxes[1] - mins[1]) * 0.2],
       [maxes[0] + (maxes[0] - mins[0]) * 0.2, maxes[1] + (maxes[1] - mins[1]) * 0.2]
@@ -759,7 +724,6 @@ function setupCanvas() {
   if (currentView !== "frontPage") {
     const axisControls = createAxisControls();
     
-    // Set initial axis labels
     const xOption = axisOptions.find(opt => opt.id === selectedXAxis);
     const yOption = axisOptions.find(opt => opt.id === selectedYAxis);
     
@@ -767,12 +731,10 @@ function setupCanvas() {
       updateAxisLabels(xOption.label, yOption.label);
     }
     
-    // Always ensure the sidebar exists
     ensureSidebarExists();
   }
 }
 
-// New function to ensure the sidebar exists
 function ensureSidebarExists() {
   let sidebar = document.getElementById("recipe-details-sidebar");
   
@@ -802,7 +764,6 @@ const drawMarks = () => {
   
   const transform = d3.zoomTransform(canvas);
   
-  // Only clear and redraw if we have data to show
   if (dataCSV && currentView === "food" && foodSet) {
     if (foodPositionMap) foodPositionMap.invalidate();
     
@@ -827,7 +788,6 @@ const drawMarks = () => {
       triggerSummaryView();
       drawTransitionBegun = true;
     } else {
-      // Only clear the canvas if we have visible marks to draw
       if (visibleMarks.count() > 0) {
         ctx.resetTransform();
         ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
@@ -1174,7 +1134,6 @@ const drawMarks = () => {
   let mins = getMins(foodSet);
   let maxes = getMaxes(foodSet);
   
-  // Update zoom constraints based on mark boundaries
   zoom.translateExtent([
     [mins[0] - (maxes[0] - mins[0]) * 0.2, mins[1] - (maxes[1] - mins[1]) * 0.2],
     [maxes[0] + (maxes[0] - mins[0]) * 0.2, maxes[1] + (maxes[1] - mins[1]) * 0.2]
@@ -1259,19 +1218,13 @@ const drawMarks = () => {
   const zoom = d3
   .zoom()
   .scaleExtent([1, 1.5])
-  .translateExtent([[0, 0], [canvasWidth, canvasHeight]]) // Basic canvas constraint
+  .translateExtent([[0, 0], [canvasWidth, canvasHeight]])
   .on("zoom", (e) => {
     if (e.sourceEvent) {
-      // Get the current marks set depending on view
       const currentMarkSet = currentView === "food" ? foodSet : summarySet;
-      
-      // Apply constraints based on data bounds
       const constrainedTransform = constrainTransformToMarks(e.transform, currentMarkSet);
-      
-      // Update scales with constrained transform
       scales.transform(constrainedTransform);
       
-      // Redraw with updated transform
       requestAnimationFrame(drawMarks);
     }
   });
@@ -1298,55 +1251,43 @@ const drawMarks = () => {
     return 0;
   }
   
-  // Extract the cooking times
   let cookingTimes = [];
   for (const match of matches) {
     if (match[1] && match[2]) {
-      // Range like "50-60 minutes" - take the average
       cookingTimes.push((parseInt(match[1]) + parseInt(match[2])) / 2);
     } else if (match[3]) {
-      // Single time like "25 minutes"
       cookingTimes.push(parseInt(match[3]));
     } else if (match[4]) {
-      // Single time like "1 minute"
       cookingTimes.push(parseInt(match[4]));
     }
   }
   
-  // Sum up all cooking times for the total cooking time
   return cookingTimes.reduce((sum, time) => sum + time, 0);
 }
 
   function constrainTransformToMarks(transform: d3.ZoomTransform, markSet: MarkRenderGroup<any>): d3.ZoomTransform {
-  // Get the min/max boundaries of all marks
   const mins = getMins(markSet);
   const maxes = getMaxes(markSet);
   
-  // Add padding (percentage of the range)
   const paddingX = (maxes[0] - mins[0]) * 0.2;
   const paddingY = (maxes[1] - mins[1]) * 0.2;
   
-  // Calculate boundaries with padding
   const minX = mins[0] - paddingX;
   const maxX = maxes[0] + paddingX;
   const minY = mins[1] - paddingY;
   const maxY = maxes[1] + paddingY;
   
-  // Calculate the visible width and height based on the current scale
   const visibleWidth = canvasWidth / transform.k;
   const visibleHeight = canvasHeight / transform.k;
   
-  // Calculate the limits for the transform
   const minTransformX = -maxX + visibleWidth;
   const maxTransformX = -minX;
   const minTransformY = -maxY + visibleHeight;
   const maxTransformY = -minY;
   
-  // Constrain the transform values
   let x = Math.min(maxTransformX, Math.max(minTransformX, transform.x));
   let y = Math.min(maxTransformY, Math.max(minTransformY, transform.y));
   
-  // Return a new transform with constrained values
   return d3.zoomIdentity.translate(x, y).scale(transform.k);
 }
 
@@ -1365,30 +1306,23 @@ const drawMarks = () => {
   const matchingMarks: Mark<FoodMarkAttrs>[] = [];
   
   dataCSV.forEach((point) => {
-    // Parse ingredients properly - check if it's already an array or a string that needs parsing
     let recipeIngredients: string[] = [];
     
     if (point.Ingredients) {
-      // Check if Ingredients is a string that looks like a JSON array
       if (typeof point.Ingredients === 'string' && 
           (point.Ingredients.startsWith('[') || point.Ingredients.includes(','))) {
         try {
-          // Try to parse as JSON if it starts with [
           if (point.Ingredients.startsWith('[')) {
             recipeIngredients = JSON.parse(point.Ingredients);
           } else {
-            // Otherwise split by comma
             recipeIngredients = point.Ingredients.split(',');
           }
         } catch (e) {
-          // Fallback to comma splitting if JSON parse fails
           recipeIngredients = point.Ingredients.split(',');
         }
       } else if (Array.isArray(point.Ingredients)) {
-        // If it's already an array
         recipeIngredients = point.Ingredients;
       } else {
-        // Handle as a single string
         recipeIngredients = [point.Ingredients];
       }
     }
@@ -1412,7 +1346,6 @@ const drawMarks = () => {
         )
       );
     } else {
-      // exclude common ingredients or phrases that might appear in instructions
       const commonExceptions = ["dish", "salt", "pepper", "water", "oil", "garnish"];
       
       const significantIngredients = recipeIngredients.filter(ing => 
@@ -1432,7 +1365,6 @@ const drawMarks = () => {
     }
   });
 
-  // Apply sample size if set
   if (useSampleSize && matchingMarks.length > sampleSize) {
     return matchingMarks.sort(() => Math.random() - 0.5).slice(0, sampleSize);
   }
@@ -1453,7 +1385,6 @@ async function triggerFoodView() {
         // console.log("Loading data for the first time...");
         dataCSV = await d3.csv("src/datasets/food_data.csv");
         
-        // Extract data properties for axis options
         extractDataProperties();
       }
       
@@ -1651,10 +1582,8 @@ function handleClick(event: MouseEvent) {
   let clickedMarkDisplayBox = document.getElementById("clicked-mark-box");
   
   if (clickedMarkDisplayBox && detailsSidebar) {
-    // Clear previous content
     clickedMarkDisplayBox.innerHTML = "";
     
-    // Add styling directly to head if not already present
     if (!document.getElementById('enhanced-recipe-styles')) {
       const styleElement = document.createElement('style');
       styleElement.id = 'enhanced-recipe-styles';
@@ -1863,11 +1792,9 @@ function handleClick(event: MouseEvent) {
       document.head.appendChild(styleElement);
     }
 
-    // Create recipe card
     let recipeCard = document.createElement('div');
     recipeCard.className = 'recipe-card';
     
-    // Add recipe title first
     let titleDiv = document.createElement('div');
     titleDiv.className = 'recipe-title';
     let title = document.createElement('h3');
@@ -1875,7 +1802,6 @@ function handleClick(event: MouseEvent) {
     titleDiv.appendChild(title);
     recipeCard.appendChild(titleDiv);
     
-    // Add recipe image as a contained element
     let imgSrc = clickedMark.attr('img').src;
     let imgContainer = document.createElement('div');
     imgContainer.className = 'recipe-image-container';
@@ -1886,21 +1812,18 @@ function handleClick(event: MouseEvent) {
     imgContainer.appendChild(img);
     recipeCard.appendChild(imgContainer);
     
-    // Create close button
     let closeButton = document.createElement('button');
     closeButton.className = 'close-button';
-    closeButton.innerHTML = '&times;'; // Using HTML entity for times symbol
+    closeButton.innerHTML = '&times;'; 
     closeButton.onclick = function() {
       detailsSidebar.classList.remove('active');
       detailsSidebar.style.transform = "translateX(100%)";
     };
     recipeCard.appendChild(closeButton);
 
-    // Create content container
     let contentContainer = document.createElement('div');
     contentContainer.className = 'recipe-content';
     
-    // Add instructions with proper formatting
     let instructionsSection = document.createElement('div');
     instructionsSection.className = 'recipe-section';
     let instructionsTitle = document.createElement('h4');
@@ -1913,7 +1836,6 @@ function handleClick(event: MouseEvent) {
     instructionsSection.appendChild(instructionsContent);
     contentContainer.appendChild(instructionsSection);
     
-    // Add AI summary section with loading indicator
     let aiSection = document.createElement('div');
     aiSection.className = 'recipe-section';
     let aiTitle = document.createElement('h4');
@@ -1933,28 +1855,23 @@ function handleClick(event: MouseEvent) {
     aiSection.appendChild(aiTitle);
     aiSection.appendChild(aiLoadingContainer);
     
-    // Add AI content container that will be populated later
     let aiContent = document.createElement('div');
     aiContent.id = 'ai-summary-content';
     aiContent.className = 'ai-content';
     aiSection.appendChild(aiContent);
-    aiContent.style.display = 'none'; // Initially hidden
+    aiContent.style.display = 'none'; 
     
     contentContainer.appendChild(aiSection);
     recipeCard.appendChild(contentContainer);
     
     clickedMarkDisplayBox.appendChild(recipeCard);
     
-    // Show the sidebar
     detailsSidebar.classList.add('active');
     
-    // Get AI summary and update content when ready
     AISummary(clickedMark).then(summary => {
-      // Remove loading indicator
       aiLoadingContainer.style.display = 'none';
       aiContent.style.display = 'block';
       
-      // Format and display the AI summary
       let aiSummaryText = document.createElement('p');
       aiSummaryText.textContent = summary;
       aiContent.appendChild(aiSummaryText);
