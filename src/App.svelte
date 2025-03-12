@@ -12,6 +12,32 @@
   // import ingredientsArray from "../ingredients_filtered.js";
   import { onMount } from "svelte";
   import { GoogleGenerativeAI } from "@google/generative-ai";
+  import { API_KEY } from "../key.js";
+
+  const genAI = new GoogleGenerativeAI(API_KEY);
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+  async function AISummary(mark : Mark<FoodMarkAttrs>) : Promise<string> 
+  {
+    const recipeId = Number(mark.id);
+  
+    const recipe = dataCSV[recipeId];
+  
+    const ings = recipe.Ingredients;
+    const prompt = "Estimate the nutritional information of this recipe given these ingredients, and provide a brief summary of it. Do not use any formatting, send a pure paragraph of text. Answer with confidence, and use the word aproximately or around if unsure of specifics.\n" + ings;
+    const result = await model.generateContent(prompt);
+
+    return result.response.text();
+  }
+
+  async function AISuggest(ingredients: string[]) : Promise<string>
+  {
+    const prompt = "Come up with a suggestion for a recipe to make, given these ingredients\n" + ingredients;
+    const result = await model.generateContent(prompt);
+
+    return result.response.text();
+  }
+
 
   type FoodMarkAttrs = {
     title: Attribute<string>;
@@ -46,7 +72,7 @@
   { 
     id: "time", 
     label: "Preparation Time", 
-    valueFn: (mark) => mark.attr("time") / 3
+    valueFn: (mark) => mark.attr("time") * 3
   },
   { 
     id: "placeholder", 
@@ -56,7 +82,7 @@
   { 
     id: "ingredientCount", 
     label: "Number of Ingredients", 
-    valueFn: (mark) => mark.attr("ingredients").length
+    valueFn: (mark) => mark.attr("ingredients").length * 3
   },
   {
     id: "stepCount",
@@ -480,7 +506,7 @@ function updateVisualizationSmoothly() {
         },
       },
       size: new Attribute(0),
-      time: { value: 1000 * Math.random() },
+      time: { valueFn: (mark) => extractCookingTime(mark.id)},
       placeholder: { value: 1000 * Math.random() },
       name: {value: dataCSV[Number(id)]?.Title ?? "No Name"},
       instructions: {value: dataCSV[Number(id)]?.Instructions}
@@ -1250,6 +1276,47 @@ const drawMarks = () => {
     }
   });
 
+  function extractCookingTime(id: string): number {
+  const recipeId = Number(id);
+  
+  const recipe = dataCSV[recipeId];
+  
+  if (!recipe) {
+    return 0; 
+  }
+  
+  const instructions = recipe.Instructions;
+  
+  if (!instructions) {
+    return 0; 
+  }
+  
+  const timeRegex = /(\d+)[-–](\d+)\s*minutes|(\d+)\s*minutes|(\d+)\s*minute/gi;
+  let matches = [...instructions.matchAll(timeRegex)];
+  
+  if (matches.length === 0) {
+    return 0;
+  }
+  
+  // Extract the cooking times
+  let cookingTimes = [];
+  for (const match of matches) {
+    if (match[1] && match[2]) {
+      // Range like "50-60 minutes" - take the average
+      cookingTimes.push((parseInt(match[1]) + parseInt(match[2])) / 2);
+    } else if (match[3]) {
+      // Single time like "25 minutes"
+      cookingTimes.push(parseInt(match[3]));
+    } else if (match[4]) {
+      // Single time like "1 minute"
+      cookingTimes.push(parseInt(match[4]));
+    }
+  }
+  
+  // Sum up all cooking times for the total cooking time
+  return cookingTimes.reduce((sum, time) => sum + time, 0);
+}
+
   function constrainTransformToMarks(transform: d3.ZoomTransform, markSet: MarkRenderGroup<any>): d3.ZoomTransform {
   // Get the min/max boundaries of all marks
   const mins = getMins(markSet);
@@ -1547,67 +1614,22 @@ function handleClick(event: MouseEvent) {
       }
     } else if (currentView === "food") {
       const clickedMark = foodPositionMap.hitTest([dataX, dataY]);
-      
+  
       if (clickedMark) {
         console.log("Food item:", clickedMark.attr("name"));
-        let clickedMarkDisplayBox = document.getElementById("clicked-mark-box");
         let detailsSidebar = document.getElementById("recipe-details-sidebar");
-        console.log("Initial sidebar state:", detailsSidebar?.style.display, detailsSidebar?.classList);
+    
         if (detailsSidebar){
-         detailsSidebar.style.transform = "translateX(0)";
+          detailsSidebar.style.transform = "translateX(0)";
           detailsSidebar.style.right = "0";
-        }
-
-        if (clickedMarkDisplayBox && detailsSidebar) {
-          // Clear the previous content
-          clickedMarkDisplayBox.innerHTML = "";
-
-          // Create a recipe card container
-          let recipeCard = document.createElement('div');
-          recipeCard.className = 'recipe-card';
-          
-          // Add image
-          let imgSrc = clickedMark.attr('img').src;
-          let img = document.createElement('img');
-          img.src = imgSrc;
-          img.className = 'recipe-image';
-          
-          // Add recipe title
-          let titleDiv = document.createElement('div');
-          titleDiv.className = 'recipe-title';
-          let title = document.createElement('h3');
-          title.textContent = clickedMark.attr("name");
-          titleDiv.appendChild(title);
-          
-          // Create close button
-          let closeButton = document.createElement('button');
-          closeButton.className = 'close-button';
-          closeButton.textContent = '×';
-          closeButton.onclick = function() {
-            detailsSidebar.classList.remove('active');
-            detailsSidebar.style.transform = "translateX(100%)";
-          };
-          
-          // Assemble the recipe card
-          recipeCard.appendChild(closeButton);
-          recipeCard.appendChild(img);
-          recipeCard.appendChild(titleDiv);
-          
-          // Add to the display box
-          clickedMarkDisplayBox.appendChild(recipeCard);
-          
-          // Make the sidebar visible by adding the active class
-          detailsSidebar.classList.add('active');
-          
-          console.log("Sidebar should be visible now with active class:", detailsSidebar.classList.contains('active'));
+      
+          createRecipeCard(clickedMark, detailsSidebar);
         } else {
-          console.error("Could not find clickedMarkDisplayBox or detailsSidebar elements");
-          console.log("clickedMarkDisplayBox:", clickedMarkDisplayBox);
-          console.log("detailsSidebar:", detailsSidebar);
+          console.error("Could not find detailsSidebar element");
         }
       }
     }
-}
+  }
 
   function extractDataProperties() {
     if (dataCSV && foodSet) {
@@ -1625,6 +1647,330 @@ function handleClick(event: MouseEvent) {
     }
   }
 
+  function createRecipeCard(clickedMark : Mark<FoodMarkAttrs>, detailsSidebar : HTMLElement) {
+  let clickedMarkDisplayBox = document.getElementById("clicked-mark-box");
+  
+  if (clickedMarkDisplayBox && detailsSidebar) {
+    // Clear previous content
+    clickedMarkDisplayBox.innerHTML = "";
+    
+    // Add styling directly to head if not already present
+    if (!document.getElementById('enhanced-recipe-styles')) {
+      const styleElement = document.createElement('style');
+      styleElement.id = 'enhanced-recipe-styles';
+      styleElement.textContent = `
+        /* Recipe Card Enhanced Styling */
+        #clicked-mark-box {
+          padding: 0;
+          height: 100%;
+        }
+        
+        .recipe-card {
+          height: 100%;
+          background-color: #fff9f5; 
+          overflow: hidden;
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          color: #3a3a3a;
+        }
+        
+        .close-button {
+          position: absolute;
+          top: 15px;
+          right: 15px;
+          background-color: rgba(255, 255, 255, 0.9);
+          border: none;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 24px;
+          color: #2f4858;
+          cursor: pointer;
+          z-index: 10;
+          box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+          transition: all 0.3s ease;
+        }
+        
+        .close-button:hover {
+          background-color: #f1f1f1;
+          transform: scale(1.1);
+          box-shadow: 0 5px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .recipe-image-container {
+          padding: 20px;
+          display: flex;
+          justify-content: center;
+          background-color: #fff;
+        }
+        
+        .recipe-image {
+          max-width: 300px;
+          max-height: 200px;
+          object-fit: contain;
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .recipe-title {
+          padding: 22px 20px;
+          background: linear-gradient(to right, #ff6b6b, #ff5252);
+          color: white;
+          position: relative;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+          margin-top: 0;
+        }
+        
+        .recipe-title::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 5px;
+          height: 100%;
+          background-color: #f9c80e;
+        }
+        
+        .recipe-title h3 {
+          margin: 0;
+          font-size: 1.5rem;
+          font-weight: 600;
+          letter-spacing: 0.5px;
+          text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+        }
+        
+        .recipe-content {
+          padding: 30px 25px;
+          flex: 1;
+          overflow-y: auto;
+          background-image: 
+            radial-gradient(circle at 10% 20%, rgba(253, 239, 132, 0.05) 0%, transparent 20%),
+            radial-gradient(circle at 90% 80%, rgba(78, 205, 196, 0.05) 0%, transparent 20%);
+        }
+        
+        .recipe-section {
+          margin-bottom: 35px;
+          position: relative;
+        }
+        
+        .recipe-section h4 {
+          color: #ff6b6b;
+          margin-top: 0;
+          margin-bottom: 18px;
+          font-size: 1.25rem;
+          border-bottom: none;
+          padding-bottom: 8px;
+          display: inline-block;
+          position: relative;
+        }
+        
+        .recipe-section h4::after {
+          content: '';
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          height: 3px;
+          background: linear-gradient(to right, #ff6b6b, #4ecdc4);
+          border-radius: 3px;
+        }
+        
+        .recipe-section p {
+          margin: 0;
+          line-height: 1.8;
+          color: #3a3a3a;
+        }
+        
+        .recipe-steps {
+          white-space: pre-wrap;
+          padding: 20px;
+          background-color: white;
+          border-radius: 12px;
+          border-left: 4px solid #4ecdc4;
+          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+          position: relative;
+          z-index: 1;
+        }
+        
+        .recipe-steps::before {
+          content: '"';
+          position: absolute;
+          top: -15px;
+          left: 15px;
+          font-size: 60px;
+          color: rgba(78, 205, 196, 0.1);
+          font-family: Georgia, serif;
+          z-index: -1;
+        }
+        
+        /* AI Loading indicator */
+        .ai-loading {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 25px 0;
+        }
+        
+        .ai-loading .loader {
+          border: 3px solid rgba(255, 107, 107, 0.1);
+          border-top: 3px solid #ff6b6b;
+          border-right: 3px solid #4ecdc4;
+          border-bottom: 3px solid #f9c80e;
+          border-radius: 50%;
+          width: 35px;
+          height: 35px;
+          animation: spin-recipe 1.2s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+          margin-bottom: 15px;
+        }
+        
+        .ai-content {
+          padding: 22px;
+          background-color: white;
+          background-image: linear-gradient(135deg, rgba(249, 200, 14, 0.03) 0%, rgba(255, 107, 107, 0.03) 100%);
+          border-radius: 12px;
+          border-left: 4px solid #f9c80e;
+          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+          position: relative;
+        }
+        
+        .ai-content::before {
+          content: '✨';
+          position: absolute;
+          top: -12px;
+          right: 20px;
+          font-size: 24px;
+          color: #f9c80e;
+          text-shadow: 0 0 10px rgba(249, 200, 14, 0.3);
+        }
+        
+        .error-message {
+          color: #d9534f;
+          font-style: italic;
+          padding: 10px 15px;
+          background-color: rgba(217, 83, 79, 0.05);
+          border-radius: 8px;
+        }
+        
+        @keyframes spin-recipe {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `;
+      document.head.appendChild(styleElement);
+    }
+
+    // Create recipe card
+    let recipeCard = document.createElement('div');
+    recipeCard.className = 'recipe-card';
+    
+    // Add recipe title first
+    let titleDiv = document.createElement('div');
+    titleDiv.className = 'recipe-title';
+    let title = document.createElement('h3');
+    title.textContent = clickedMark.attr("name");
+    titleDiv.appendChild(title);
+    recipeCard.appendChild(titleDiv);
+    
+    // Add recipe image as a contained element
+    let imgSrc = clickedMark.attr('img').src;
+    let imgContainer = document.createElement('div');
+    imgContainer.className = 'recipe-image-container';
+    let img = document.createElement('img');
+    img.src = imgSrc;
+    img.className = 'recipe-image';
+    img.alt = clickedMark.attr("name") || "Recipe image";
+    imgContainer.appendChild(img);
+    recipeCard.appendChild(imgContainer);
+    
+    // Create close button
+    let closeButton = document.createElement('button');
+    closeButton.className = 'close-button';
+    closeButton.innerHTML = '&times;'; // Using HTML entity for times symbol
+    closeButton.onclick = function() {
+      detailsSidebar.classList.remove('active');
+      detailsSidebar.style.transform = "translateX(100%)";
+    };
+    recipeCard.appendChild(closeButton);
+
+    // Create content container
+    let contentContainer = document.createElement('div');
+    contentContainer.className = 'recipe-content';
+    
+    // Add instructions with proper formatting
+    let instructionsSection = document.createElement('div');
+    instructionsSection.className = 'recipe-section';
+    let instructionsTitle = document.createElement('h4');
+    instructionsTitle.textContent = 'Instructions';
+    let instructionsContent = document.createElement('div');
+    instructionsContent.className = 'recipe-steps';
+    instructionsContent.textContent = clickedMark.attr('instructions');
+    
+    instructionsSection.appendChild(instructionsTitle);
+    instructionsSection.appendChild(instructionsContent);
+    contentContainer.appendChild(instructionsSection);
+    
+    // Add AI summary section with loading indicator
+    let aiSection = document.createElement('div');
+    aiSection.className = 'recipe-section';
+    let aiTitle = document.createElement('h4');
+    aiTitle.textContent = 'AI Overview';
+    
+    let aiLoadingContainer = document.createElement('div');
+    aiLoadingContainer.className = 'ai-loading';
+    
+    let loadingIndicator = document.createElement('div');
+    loadingIndicator.className = 'loader';
+    aiLoadingContainer.appendChild(loadingIndicator);
+    
+    let loadingText = document.createElement('p');
+    loadingText.textContent = 'Generating AI overview...';
+    aiLoadingContainer.appendChild(loadingText);
+    
+    aiSection.appendChild(aiTitle);
+    aiSection.appendChild(aiLoadingContainer);
+    
+    // Add AI content container that will be populated later
+    let aiContent = document.createElement('div');
+    aiContent.id = 'ai-summary-content';
+    aiContent.className = 'ai-content';
+    aiSection.appendChild(aiContent);
+    aiContent.style.display = 'none'; // Initially hidden
+    
+    contentContainer.appendChild(aiSection);
+    recipeCard.appendChild(contentContainer);
+    
+    clickedMarkDisplayBox.appendChild(recipeCard);
+    
+    // Show the sidebar
+    detailsSidebar.classList.add('active');
+    
+    // Get AI summary and update content when ready
+    AISummary(clickedMark).then(summary => {
+      // Remove loading indicator
+      aiLoadingContainer.style.display = 'none';
+      aiContent.style.display = 'block';
+      
+      // Format and display the AI summary
+      let aiSummaryText = document.createElement('p');
+      aiSummaryText.textContent = summary;
+      aiContent.appendChild(aiSummaryText);
+    }).catch(error => {
+      aiLoadingContainer.style.display = 'none';
+      aiContent.style.display = 'block';
+      
+      let errorMessage = document.createElement('p');
+      errorMessage.textContent = 'Could not generate AI overview. Please try again.';
+      errorMessage.className = 'error-message';
+      aiContent.appendChild(errorMessage);
+    });
+  }
+}
+
+
   function changeAnimationSettings() {
     animateOnlyVisibleMarks = !animateOnlyVisibleMarks;
   }
@@ -1636,6 +1982,7 @@ function handleClick(event: MouseEvent) {
   function foodView() : boolean {
     return currentView === "food";
   }
+
 
 </script>
 
@@ -1990,140 +2337,312 @@ function handleClick(event: MouseEvent) {
 
   /* Recipe Card Styling */
   #clicked-mark-box {
-    padding: 0;
-    height: 100%;
-  }
+  padding: 0;
+  height: 100%;
+}
 
-  .recipe-card {
-    height: 100%;
-    background-color: white;
-    overflow: hidden;
-    position: relative;
-    display: flex;
-    flex-direction: column;
-  }
+.recipe-card {
+  height: 100%;
+  background-color: #fff9f5; /* Warm, subtle off-white background */
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  color: #3a3a3a;
+}
 
-  .close-button {
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    background-color: rgba(255, 255, 255, 0.9);
-    border: none;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    color: var(--dark-color);
-    cursor: pointer;
-    z-index: 10;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-    transition: var(--transition);
-  }
+.close-button {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background-color: rgba(255, 255, 255, 0.9);
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: var(--dark-color);
+  cursor: pointer;
+  z-index: 10;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+  transition: var(--transition);
+}
 
-  .close-button:hover {
-    background-color: #f1f1f1;
-    transform: scale(1.1);
-  }
+.close-button:hover {
+  background-color: #f1f1f1;
+  transform: scale(1.1);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.2);
+}
 
+.recipe-header {
+  position: relative;
+  height: 280px;
+  overflow: hidden;
+}
+
+.recipe-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s ease;
+  filter: brightness(0.95);
+}
+
+.recipe-header:hover .recipe-image {
+  transform: scale(1.05);
+  filter: brightness(1.05);
+}
+
+.recipe-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 80px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.5), transparent);
+  z-index: 2;
+}
+
+.recipe-title {
+  padding: 22px 20px;
+  background: linear-gradient(to right, var(--primary-color), var(--primary-dark));
+  color: white;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.recipe-title::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100%;
+  background-color: var(--accent-color);
+}
+
+.recipe-title h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.recipe-content {
+  padding: 30px 25px;
+  flex: 1;
+  overflow-y: auto;
+  background-image: 
+    radial-gradient(circle at 10% 20%, rgba(253, 239, 132, 0.05) 0%, transparent 20%),
+    radial-gradient(circle at 90% 80%, rgba(78, 205, 196, 0.05) 0%, transparent 20%);
+}
+
+.recipe-section {
+  margin-bottom: 35px;
+  position: relative;
+}
+
+.recipe-section h4 {
+  color: var(--primary-color);
+  margin-top: 0;
+  margin-bottom: 18px;
+  font-size: 1.25rem;
+  border-bottom: none;
+  padding-bottom: 8px;
+  display: inline-block;
+  position: relative;
+}
+
+.recipe-section h4::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+  border-radius: 3px;
+}
+
+.recipe-section p {
+  margin: 0;
+  line-height: 1.8;
+  color: #3a3a3a;
+}
+
+.recipe-steps {
+  white-space: pre-wrap;
+  padding: 20px;
+  background-color: white;
+  border-radius: 12px;
+  border-left: 4px solid var(--secondary-color);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+  position: relative;
+  z-index: 1;
+}
+
+.recipe-steps::before {
+  content: '"';
+  position: absolute;
+  top: -15px;
+  left: 15px;
+  font-size: 60px;
+  color: rgba(78, 205, 196, 0.1);
+  font-family: Georgia, serif;
+  z-index: -1;
+}
+
+/* AI Loading indicator */
+.ai-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 25px 0;
+}
+
+.ai-loading .loader {
+  border: 3px solid rgba(255, 107, 107, 0.1);
+  border-top: 3px solid var(--primary-color);
+  border-right: 3px solid var(--secondary-color);
+  border-bottom: 3px solid var(--accent-color);
+  border-radius: 50%;
+  width: 35px;
+  height: 35px;
+  animation: spin 1.2s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+  margin-bottom: 15px;
+}
+
+.ai-content {
+  padding: 22px;
+  background-color: white;
+  background-image: linear-gradient(135deg, rgba(249, 200, 14, 0.03) 0%, rgba(255, 107, 107, 0.03) 100%);
+  border-radius: 12px;
+  border-left: 4px solid var(--accent-color);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+.ai-content::before {
+  content: '✨';
+  position: absolute;
+  top: -12px;
+  right: 20px;
+  font-size: 24px;
+  color: var(--accent-color);
+  text-shadow: 0 0 10px rgba(249, 200, 14, 0.3);
+}
+
+.error-message {
+  color: #d9534f;
+  font-style: italic;
+  padding: 10px 15px;
+  background-color: rgba(217, 83, 79, 0.05);
+  border-radius: 8px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
   .recipe-header {
-    position: relative;
+    height: 200px;
   }
-
-  .recipe-image {
-    width: 100%;
-    height: 250px;
-    object-fit: cover;
-  }
-
-  .recipe-title {
-    padding: 20px;
-    background-color: var(--dark-color);
-    color: white;
-  }
-
+  
   .recipe-title h3 {
-    margin: 0;
-    font-size: 1.5rem;
+    font-size: 1.3rem;
   }
-
+  
   .recipe-content {
-    padding: 25px;
-    flex: 1;
-    overflow-y: auto;
+    padding: 20px;
   }
+}
 
-  .recipe-section {
-    margin-bottom: 25px;
-  }
+.recipe-section {
+  margin-bottom: 30px;
+  position: relative;
+}
 
-  .recipe-section h4 {
-    color: var(--primary-color);
-    margin-top: 0;
-    margin-bottom: 15px;
-    font-size: 1.2rem;
-    border-bottom: 2px solid var(--primary-color);
-    padding-bottom: 8px;
-    display: inline-block;
-  }
+.recipe-section h4 {
+  color: var(--primary-color);
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 1.2rem;
+  border-bottom: 2px solid var(--primary-color);
+  padding-bottom: 8px;
+  display: inline-block;
+}
 
-  .recipe-section p {
-    margin: 0;
-    line-height: 1.7;
-    color: #444;
-  }
+.recipe-section p {
+  margin: 0;
+  line-height: 1.7;
+  color: #444;
+}
 
-  /* Axis Controls Styling */
-  .axis-selector {
-    display: flex;
-    align-items: center;
-    margin: 0 10px;
+.recipe-steps {
+  white-space: pre-wrap;
+  padding: 15px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  border-left: 3px solid var(--secondary-color);
+}
+
+/* AI Loading indicator */
+.ai-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 0;
+}
+
+.ai-loading .loader {
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid var(--primary-color);
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1.5s linear infinite;
+  margin-bottom: 10px;
+}
+
+.ai-content {
+  padding: 15px;
+  background-color: #f5f8ff;
+  border-radius: 8px;
+  border-left: 3px solid var(--accent-color);
+}
+
+.error-message {
+  color: #d9534f;
+  font-style: italic;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .recipe-header {
+    height: 180px;
   }
   
-  .axis-selector label {
-    margin-right: 8px;
-    font-weight: bold;
-    color: var(--dark-color);
+  .recipe-title h3 {
+    font-size: 1.3rem;
   }
   
-  .axis-selector select {
-    padding: 8px 12px;
-    min-width: 150px;
-    border-radius: 6px;
-    border: 1px solid #ddd;
-  }
-  
-  #axis-controls {
-    background-color: white;
-    border-radius: 8px;
+  .recipe-content {
     padding: 15px;
-    box-shadow: var(--box-shadow);
-    display: flex;
-    align-items: center;
-    position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 15;
   }
-  
-  #x-axis-label, #y-axis-label {
-    color: var(--dark-color);
-    background-color: rgba(255, 255, 255, 0.9);
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-weight: 500;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  /* Responsive Adjustments */
-  @media (max-width: 768px) {
-    .front-page-content {
-      padding: 1.5rem;
-      max-width: 90%;
-    }
+}
 
     .front-page h1 {
       font-size: 2.2rem;
@@ -2145,5 +2664,5 @@ function handleClick(event: MouseEvent) {
     .recipe-image {
       height: 180px;
     }
-  }
+  
 </style>
