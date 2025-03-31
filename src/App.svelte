@@ -13,6 +13,7 @@
   import { onMount } from "svelte";
   import { GoogleGenerativeAI } from "@google/generative-ai";
   import { API_KEY } from "../key.js";
+    import { backIn } from "svelte/easing";
 
   const genAI = new GoogleGenerativeAI(API_KEY);
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -38,6 +39,9 @@
     return result.response.text();
   }
 
+  let hoveredMarkRef : Mark<FoodMarkAttrs> | null = null;
+
+
 
   type FoodMarkAttrs = {
     title: Attribute<string>;
@@ -50,6 +54,8 @@
     placeholder: Attribute<number>;
     name: Attribute<string>;
     instructions: Attribute<string>;
+    umapX: Attribute<number>;
+    umapY: Attribute<number>;
   };
 
   type SummaryMark = {
@@ -87,6 +93,16 @@
     id: "stepCount",
     label: "Number of steps in recipe",
     valueFn: (mark) => mark.attr("instructions").length / 3
+  },
+  {
+    id: "umapX",
+    label: "Dimension 1",
+    valueFn: (mark) => mark.attr("umapX") * 3
+  },
+  {
+    id: "umapY",
+    label: "Dimension 2",
+    valueFn: (mark) => mark.attr("umapY") * 3
   }
 ];
 
@@ -101,6 +117,7 @@
   let gridSize: number = 2;
 
   let dataCSV: d3.DSVRowArray;
+  let umapCSV: d3.DSVRowArray;
   let canvas: HTMLCanvasElement;
   let ticker: Ticker;
   let foodSet: MarkRenderGroup<FoodMarkAttrs>;
@@ -122,6 +139,8 @@
   type FilterOption = "onlyComplete" | "anyIngredient" | "allIngredients";
   let selectedFilterOption: FilterOption = "allIngredients";  
   let useSampleSize = true;
+
+  let enteredIngredientsButtons : HTMLButtonElement[] = [];
 
 $: selectedFilterOption = filteringDropdown?.value as FilterOption;
 
@@ -192,6 +211,7 @@ function setupIngredientSearchBar(
             b.style.borderRadius = "3px";
             b.style.color = "white";
             enteredIngredientsBox.appendChild(b);
+            if (currentView != "frontPage") enteredIngredientsButtons.push(b);
             
             showLoadingIndicator();
             
@@ -205,7 +225,8 @@ function setupIngredientSearchBar(
             b.onclick = () => {
               selectedIngredients = selectedIngredients.filter(ing => ing !== barVal);
               enteredIngredientsBox.removeChild(b);
-              
+              if (currentView != "frontPage") enteredIngredientsButtons.splice(enteredIngredientsButtons.indexOf(b), 1);
+
               showLoadingIndicator();
               
               setTimeout(() => {
@@ -241,7 +262,6 @@ function setupIngredientSearchBar(
           result.textContent = String(element);
           result.onclick = () => {
             selectedIngredients.push(element);
-            
             let b = document.createElement('button');
             b.textContent = String(element);
             b.classList.add('result-added-button');
@@ -250,10 +270,13 @@ function setupIngredientSearchBar(
             b.style.padding = "5px";
             b.style.borderRadius = "3px";
             b.style.color = "white";
+
+            if (currentView != "frontPage") enteredIngredientsButtons.push(b);
             
             b.onclick = () => {
               selectedIngredients = selectedIngredients.filter(ing => ing !== element);
               enteredIngredientsBox.removeChild(b);
+              if (currentView != "frontPage") enteredIngredientsButtons.splice(enteredIngredientsButtons.indexOf(b), 1);
               
               showLoadingIndicator();
               
@@ -268,7 +291,7 @@ function setupIngredientSearchBar(
             searchBar.value = "";
             ingredientBar.removeChild(result);
             
-            enteredIngredientsBox.appendChild(b);
+            if (currentView != "frontPage") enteredIngredientsBox.appendChild(b);
             
             showLoadingIndicator();
             
@@ -408,6 +431,257 @@ function updateVisualizationSmoothly() {
   updateAxisLabels(xOption.label, yOption.label);
 }
 
+function getCanvasEdgeCoordinates() {
+  if (!canvas) return null;
+  
+  const rect = canvas.getBoundingClientRect();
+  
+  const canvasLeft = rect.left;
+  const canvasTop = rect.top;
+  const canvasRight = rect.right;
+  const canvasBottom = rect.bottom;
+  
+  type EdgePoint = {
+    clientX: number;
+    clientY: number;
+    canvasX?: number;
+    canvasY?: number;
+    dataX?: number;
+    dataY?: number;
+  };
+  
+  type EdgeCoordinates = {
+    topLeft: EdgePoint;
+    topRight: EdgePoint;
+    bottomLeft: EdgePoint;
+    bottomRight: EdgePoint;
+  };
+  
+  const edgeCoordinates: EdgeCoordinates = {
+    topLeft: {
+      clientX: canvasLeft,
+      clientY: canvasTop
+    },
+    topRight: {
+      clientX: canvasRight,
+      clientY: canvasTop
+    },
+    bottomLeft: {
+      clientX: canvasLeft,
+      clientY: canvasBottom
+    },
+    bottomRight: {
+      clientX: canvasRight,
+      clientY: canvasBottom
+    }
+  };
+  
+  const transform = d3.zoomTransform(canvas);
+  const X_SCALAR = 0.5;
+  const Y_SCALAR = 0.5;
+  const scaleX = (canvas.width / rect.width);
+  const scaleY = (canvas.height / rect.height);
+  
+  const edges: (keyof EdgeCoordinates)[] = ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'];
+  
+  edges.forEach(edge => {
+    const point = edgeCoordinates[edge];
+    
+    const canvasX = (((point.clientX - rect.left) * X_SCALAR) - 19.76) * scaleX;
+    const canvasY = (((point.clientY - rect.bottom) * Y_SCALAR) + 305) * scaleY;
+    
+    const [dataX, dataY] = transform.invert([canvasX, canvasY]);
+    
+    point.canvasX = canvasX;
+    point.canvasY = canvasY;
+    point.dataX = dataX;
+    point.dataY = dataY;
+  });
+  
+  return edgeCoordinates;
+}
+
+function getCanvasEdgeMaximums() {
+  const edges = getCanvasEdgeCoordinates();
+  if (!edges) return null;
+  
+  return {
+    maxClientX: Math.max(edges.topLeft.clientX, edges.topRight.clientX, 
+                         edges.bottomLeft.clientX, edges.bottomRight.clientX),
+    maxClientY: Math.max(edges.topLeft.clientY, edges.topRight.clientY, 
+                         edges.bottomLeft.clientY, edges.bottomRight.clientY),
+    maxCanvasX: Math.max(
+      edges.topLeft.canvasX!, edges.topRight.canvasX!, 
+      edges.bottomLeft.canvasX!, edges.bottomRight.canvasX!
+    ),
+    maxCanvasY: Math.max(
+      edges.topLeft.canvasY!, edges.topRight.canvasY!, 
+      edges.bottomLeft.canvasY!, edges.bottomRight.canvasY!
+    ),
+    maxDataX: Math.max(
+      edges.topLeft.dataX!, edges.topRight.dataX!, 
+      edges.bottomLeft.dataX!, edges.bottomRight.dataX!
+    ),
+    maxDataY: Math.max(
+      edges.topLeft.dataY!, edges.topRight.dataY!, 
+      edges.bottomLeft.dataY!, edges.bottomRight.dataY!
+    )
+  };
+}
+
+function getCanvasEdgeBounds() {
+  if (!canvas) return null;
+  
+  const rect = canvas.getBoundingClientRect();
+  
+  const canvasLeft = rect.left;
+  const canvasTop = rect.top;
+  const canvasRight = rect.right;
+  const canvasBottom = rect.bottom;
+  
+  type EdgePoint = {
+    clientX: number;
+    clientY: number;
+    canvasX?: number;
+    canvasY?: number;
+    dataX?: number;
+    dataY?: number;
+  };
+  
+  type EdgeCoordinates = {
+    topLeft: EdgePoint;
+    topRight: EdgePoint;
+    bottomLeft: EdgePoint;
+    bottomRight: EdgePoint;
+  };
+  
+  const edgeCoordinates: EdgeCoordinates = {
+    topLeft: {
+      clientX: canvasLeft,
+      clientY: canvasTop
+    },
+    topRight: {
+      clientX: canvasRight,
+      clientY: canvasTop
+    },
+    bottomLeft: {
+      clientX: canvasLeft,
+      clientY: canvasBottom
+    },
+    bottomRight: {
+      clientX: canvasRight,
+      clientY: canvasBottom
+    }
+  };
+  
+  const transform = d3.zoomTransform(canvas);
+  const X_SCALAR = 0.5;
+  const Y_SCALAR = 0.5;
+  const scaleX = (canvas.width / rect.width);
+  const scaleY = (canvas.height / rect.height);
+  
+  const edges: (keyof EdgeCoordinates)[] = ['topLeft', 'topRight', 'bottomLeft', 'bottomRight'];
+  
+  edges.forEach(edge => {
+    const point = edgeCoordinates[edge];
+    
+    const canvasX = (((point.clientX - rect.left) * X_SCALAR) - 19.76) * scaleX;
+    const canvasY = (((point.clientY - rect.bottom) * Y_SCALAR) + 305) * scaleY;
+    
+    const [dataX, dataY] = transform.invert([canvasX, canvasY]);
+    
+    point.canvasX = canvasX;
+    point.canvasY = canvasY;
+    point.dataX = dataX;
+    point.dataY = dataY;
+  });
+  
+  return {
+    client: {
+      minX: Math.min(
+        edgeCoordinates.topLeft.clientX, edgeCoordinates.topRight.clientX, 
+        edgeCoordinates.bottomLeft.clientX, edgeCoordinates.bottomRight.clientX
+      ),
+      maxX: Math.max(
+        edgeCoordinates.topLeft.clientX, edgeCoordinates.topRight.clientX, 
+        edgeCoordinates.bottomLeft.clientX, edgeCoordinates.bottomRight.clientX
+      ),
+      minY: Math.min(
+        edgeCoordinates.topLeft.clientY, edgeCoordinates.topRight.clientY, 
+        edgeCoordinates.bottomLeft.clientY, edgeCoordinates.bottomRight.clientY
+      ),
+      maxY: Math.max(
+        edgeCoordinates.topLeft.clientY, edgeCoordinates.topRight.clientY, 
+        edgeCoordinates.bottomLeft.clientY, edgeCoordinates.bottomRight.clientY
+      )
+    },
+    canvas: {
+      minX: Math.min(
+        edgeCoordinates.topLeft.canvasX!, edgeCoordinates.topRight.canvasX!, 
+        edgeCoordinates.bottomLeft.canvasX!, edgeCoordinates.bottomRight.canvasX!
+      ),
+      maxX: Math.max(
+        edgeCoordinates.topLeft.canvasX!, edgeCoordinates.topRight.canvasX!, 
+        edgeCoordinates.bottomLeft.canvasX!, edgeCoordinates.bottomRight.canvasX!
+      ),
+      minY: Math.min(
+        edgeCoordinates.topLeft.canvasY!, edgeCoordinates.topRight.canvasY!, 
+        edgeCoordinates.bottomLeft.canvasY!, edgeCoordinates.bottomRight.canvasY!
+      ),
+      maxY: Math.max(
+        edgeCoordinates.topLeft.canvasY!, edgeCoordinates.topRight.canvasY!, 
+        edgeCoordinates.bottomLeft.canvasY!, edgeCoordinates.bottomRight.canvasY!
+      )
+    },
+    data: {
+      minX: Math.min(
+        edgeCoordinates.topLeft.dataX!, edgeCoordinates.topRight.dataX!, 
+        edgeCoordinates.bottomLeft.dataX!, edgeCoordinates.bottomRight.dataX!
+      ),
+      maxX: Math.max(
+        edgeCoordinates.topLeft.dataX!, edgeCoordinates.topRight.dataX!, 
+        edgeCoordinates.bottomLeft.dataX!, edgeCoordinates.bottomRight.dataX!
+      ),
+      minY: Math.min(
+        edgeCoordinates.topLeft.dataY!, edgeCoordinates.topRight.dataY!, 
+        edgeCoordinates.bottomLeft.dataY!, edgeCoordinates.bottomRight.dataY!
+      ),
+      maxY: Math.max(
+        edgeCoordinates.topLeft.dataY!, edgeCoordinates.topRight.dataY!, 
+        edgeCoordinates.bottomLeft.dataY!, edgeCoordinates.bottomRight.dataY!
+      )
+    },
+    points: edgeCoordinates
+  };
+}
+
+
+function getVisibleMarks(transform: d3.ZoomTransform): MarkRenderGroup<FoodMarkAttrs> {
+  if (!canvas || !foodSet) return [] as any;
+
+  const bounds = getCanvasEdgeBounds();
+  if (!bounds) return [] as any;
+  
+  const viewportRect = {
+    x1: bounds.data.minX,
+    y1: bounds.data.minY,
+    x2: bounds.data.maxX,
+    y2: bounds.data.maxY
+  };
+  
+  return foodSet.filter((mark) => {
+    const x = mark.attr("x");
+    const y = mark.attr("y");
+    const size = mark.attr("size");
+    
+    return (
+      x + size >= viewportRect.x1 - size &&
+      y + size >= viewportRect.y1 - size &&
+      x - size <= viewportRect.x2 + size &&
+      y - size <= viewportRect.y2 + size
+    );
+  });
+}
 
 
 
@@ -426,17 +700,7 @@ function updateVisualizationSmoothly() {
 
     if (initialSetup) {
       const transform = d3.zoomTransform(canvas);
-      const visibleMarks = foodSet.filter((mark) => {
-        const x = transform.applyX(mark.attr("x"));
-        const y = transform.applyY(mark.attr("y"));
-        const size = mark.attr("size");
-        return (
-          x + size >= 0 &&
-          y + size >= 0 &&
-          x + size <= canvas.clientWidth / 2 &&
-          y + size <= canvas.clientHeight / 2
-        );
-      });
+      const visibleMarks = getVisibleMarks(transform);
 
       return Promise.all(
         visibleMarks.map((m, i) => {
@@ -479,7 +743,9 @@ function updateVisualizationSmoothly() {
       time: { valueFn: (mark) => extractCookingTime(mark.id)},
       placeholder: { value: 1000 * Math.random() },
       name: {value: dataCSV[Number(id)]?.Title ?? "No Name"},
-      instructions: {value: dataCSV[Number(id)]?.Instructions}
+      instructions: {value: dataCSV[Number(id)]?.Instructions},
+      umapX : {value: Number(umapCSV[Number(id)]?.umap_x)},
+      umapY : {value: Number(umapCSV[Number(id)]?.umap_y)}
     });
 
     function createAxisControls() {
@@ -719,6 +985,12 @@ function setupCanvas() {
   
   d3.select(canvas as Element)
     .on("click", handleClick)
+    .on("mousemove", handleHover)
+    .on("mouseleave", () => {
+      hoveredMarkRef = null;
+      canvas.style.cursor = 'default';
+      drawMarks();
+    })
     .call(zoom);
   
   if (currentView !== "frontPage") {
@@ -758,7 +1030,6 @@ function ensureSidebarExists() {
 const drawMarks = () => {
   if (!canvas) return;
   
-  console.log(imagesLoaded);
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return;
   
@@ -767,24 +1038,13 @@ const drawMarks = () => {
   if (dataCSV && currentView === "food" && foodSet) {
     if (foodPositionMap) foodPositionMap.invalidate();
     
-    const visibleMarks = foodSet.filter((mark) => {
-      const x = transform.applyX(mark.attr("x"));
-      const y = transform.applyY(mark.attr("y"));
-      const size = mark.attr("size");
-      return (
-        x + size >= 0 &&
-        y + size >= 0 &&
-        x + size <= canvas.clientWidth &&
-        y + size <= canvas.clientHeight
-      );
-    });
+    const visibleMarks = getVisibleMarks(transform);
     
     if (
       visibleMarks.count() > renderLimit &&
       !drawTransitionBegun &&
       currentView === "food"
     ) {
-      // console.log("Too many marks visible, triggering summary view");
       triggerSummaryView();
       drawTransitionBegun = true;
     } else {
@@ -799,14 +1059,17 @@ const drawMarks = () => {
           ctx.save();
           group.forEach((mark) => {
             const { x, y, img, size } = mark.get();
+            const sizeMultiplier = hoveredMarkRef && mark.id === hoveredMarkRef.id ? 1.2 : 1;
+            const adjustedSize = size * sizeMultiplier;
+            
             const transformedX = transform.applyX(x);
             const transformedY = transform.applyY(y);
             if (img && img.src && img.complete) {
               ctx.beginPath();
               ctx.arc(
-                transformedX + size,
-                transformedY + size,
-                size,
+                transformedX + adjustedSize,
+                transformedY + adjustedSize,
+                adjustedSize,
                 0,
                 Math.PI * 2,
                 true
@@ -817,15 +1080,15 @@ const drawMarks = () => {
                 img,
                 transformedX,
                 transformedY,
-                size * 2,
-                size * 2
+                adjustedSize * 2,
+                adjustedSize * 2
               );              
             } else {
               ctx.beginPath();
               ctx.arc(
-                transformedX + size,
-                transformedY + size,
-                size,
+                transformedX + adjustedSize,
+                transformedY + adjustedSize,
+                adjustedSize,
                 0,
                 Math.PI * 2,
                 true
@@ -849,9 +1112,11 @@ const drawMarks = () => {
 
     summarySet.forEach((mark) => {
       const { x, y, size } = mark.get();
+      const sizeMultiplier = hoveredMarkRef && mark.id === hoveredMarkRef.id ? 1.2 : 1;
+      
       const transformedX = transform.applyX(x);
       const transformedY = transform.applyY(y);
-      const scaledSize = (zoomScale / size) * 20000; 
+      const scaledSize = (zoomScale / size) * 20000 * sizeMultiplier; 
 
       ctx.fillStyle = "blue";
       ctx.beginPath();
@@ -870,6 +1135,7 @@ const drawMarks = () => {
     drawTransitionBegun = false;
   }
 }
+
 
   const groupMarks = (marks: MarkRenderGroup<FoodMarkAttrs>) => {
     const groupSize = 100;
@@ -1103,6 +1369,16 @@ const drawMarks = () => {
     "entered-ingredients-box"
   );
 
+  let enteredIngredientsBox = document.getElementById("entered-ingredients-box");
+
+  var children = enteredIngredientsBox?.children;
+  if (children) 
+  {
+    for (var i = 0; i < children.length; i++) {
+      enteredIngredientsButtons.push(children[i] as HTMLButtonElement);
+    }
+  }
+
   selectedFilterOption = filteringDropdown?.value as FilterOption;
     
   foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
@@ -1305,6 +1581,24 @@ const drawMarks = () => {
   
   const matchingMarks: Mark<FoodMarkAttrs>[] = [];
   
+  const isExactIngredientMatch = (recipeIng: string, searchIngredient: string): boolean => {
+    searchIngredient = searchIngredient.toLowerCase().trim();
+    recipeIng = recipeIng.toLowerCase().trim();
+    
+    if (recipeIng === searchIngredient) return true;
+   
+    const pattern = new RegExp(`\\b${searchIngredient}\\b`, 'i');
+    if (pattern.test(recipeIng)) return true;
+    
+
+    if (searchIngredient.endsWith('s') && 
+        recipeIng === searchIngredient.slice(0, -1)) return true;
+    if (recipeIng.endsWith('s') && 
+        searchIngredient === recipeIng.slice(0, -1)) return true;
+    
+    return false;
+  };
+  
   dataCSV.forEach((point) => {
     let recipeIngredients: string[] = [];
     
@@ -1336,26 +1630,26 @@ const drawMarks = () => {
     if (filterSetting === "allIngredients") {
       isMatch = ingredientList.every(ingredient => 
         recipeIngredients.some(recipeIng => 
-          recipeIng.includes(ingredient.toLowerCase())
+          isExactIngredientMatch(recipeIng, ingredient.toString())
         )
       );
     } else if (filterSetting === "anyIngredient") {
       isMatch = ingredientList.some(ingredient => 
         recipeIngredients.some(recipeIng => 
-          recipeIng.includes(ingredient.toLowerCase())
+          isExactIngredientMatch(recipeIng, ingredient.toString())
         )
       );
     } else {
       const commonExceptions = ["dish", "salt", "pepper", "water", "oil", "garnish"];
       
       const significantIngredients = recipeIngredients.filter(ing => 
-        !commonExceptions.some(exception => ing.includes(exception))
+        !commonExceptions.some(exception => isExactIngredientMatch(ing, exception))
       );
       
       isMatch = significantIngredients.length > 0 && 
         significantIngredients.every(recipeIng => 
           ingredientList.some(ingredient => 
-            recipeIng.includes(ingredient.toLowerCase())
+            isExactIngredientMatch(recipeIng, ingredient.toString())
           )
         );
     }
@@ -1382,8 +1676,8 @@ async function triggerFoodView() {
       currentView = "food";
       
       if (!dataCSV) {
-        // console.log("Loading data for the first time...");
         dataCSV = await d3.csv("src/datasets/food_data.csv");
+        umapCSV = await d3.csv("src/datasets/food_data_umap.csv");
         
         extractDataProperties();
       }
@@ -1405,17 +1699,8 @@ async function triggerFoodView() {
     const transform = d3.zoomTransform(canvas);
 
     if (ctx && transform) {
-      const visibleMarks = foodSet.filter((mark) => {
-        const x = transform.applyX(mark.attr("x"));
-        const y = transform.applyY(mark.attr("y"));
-        const size = mark.attr("size");
-        return (
-          x + size >= 0 &&
-          y + size >= 0 &&
-          x + size <= canvas.clientWidth &&
-          y + size <= canvas.clientHeight
-        );
-      });
+      const visibleMarks = getVisibleMarks(transform);
+
       if (visibleMarks.count() < renderLimit * 0.9) {
         let promise = new Promise((resolve, reject) => {
           setTimeout(() => resolve("done!"), 2050);
@@ -1505,7 +1790,13 @@ async function triggerFoodView() {
 }
 
 function handleClick(event: MouseEvent) {
+    let tooltip = document.getElementById("recipe-tooltip");
+
+    if (tooltip) tooltip.style.opacity = "0";
+
     const rect = canvas.getBoundingClientRect();
+
+    console.log(event.x - rect.left, event.y - rect.bottom);
     // let xRange = (450 + 19);
     // let yRange = (17 - 311);
 
@@ -1562,6 +1853,111 @@ function handleClick(event: MouseEvent) {
     }
   }
 
+  function handleHover(event: MouseEvent) {
+  const rect = canvas.getBoundingClientRect();
+  const X_SCALAR = 0.5;
+  const Y_SCALAR = 0.5;
+
+  const scaleX = (canvas.width / rect.width);
+  const scaleY = canvas.height / rect.height;
+  
+  const canvasX = (((event.clientX - rect.left) * X_SCALAR) - 19.76) * scaleX;
+  const canvasY = (((event.clientY - rect.bottom) * Y_SCALAR) + 305) * scaleY;
+  
+  const transform = d3.zoomTransform(canvas);
+  const [dataX, dataY] = transform.invert([canvasX, canvasY]);
+  
+  let hoveredMark = null;
+
+  let tooltip = document.getElementById("recipe-tooltip");
+  
+  if (!tooltip) {
+    tooltip = document.createElement("div");
+    tooltip.id = "recipe-tooltip";
+    tooltip.style.position = "absolute";
+    tooltip.style.padding = "12px 16px";
+    tooltip.style.background = "linear-gradient(145deg, #ffffff, #fff5f5)";
+    tooltip.style.boxShadow = "0 4px 15px rgba(220, 38, 38, 0.08), 0 1px 3px rgba(220, 38, 38, 0.12)";
+    tooltip.style.borderRadius = "8px";
+    tooltip.style.fontSize = "14px";
+    tooltip.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
+    tooltip.style.color = "#4b5563";
+    tooltip.style.pointerEvents = "none";
+    tooltip.style.zIndex = "1000";
+    tooltip.style.maxWidth = "250px";
+    tooltip.style.transition = "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)";
+    tooltip.style.opacity = "0";
+    tooltip.style.transform = "translateY(5px) scale(0.98)";
+    tooltip.style.border = "1px solid rgba(254, 226, 226, 0.9)";
+    document.body.appendChild(tooltip);
+  }
+  
+  if (currentView === "summary") {
+    hoveredMark = summaryPositionMap.hitTest([dataX, dataY]);
+    
+    canvas.style.cursor = hoveredMark ? 'pointer' : 'default';
+    
+    if (hoveredMark !== hoveredMarkRef) {
+      hoveredMarkRef = hoveredMark;
+      drawMarks(); 
+    }
+  } else if (currentView === "food") {
+    hoveredMark = foodPositionMap.hitTest([dataX, dataY]);
+    
+    canvas.style.cursor = hoveredMark ? 'pointer' : 'default';
+    
+    if (hoveredMark !== hoveredMarkRef) {
+      hoveredMarkRef = hoveredMark;
+      drawMarks(); 
+    }
+
+    if (hoveredMark) {
+      const recipeName = hoveredMark.attr('name');
+      const cookTime = hoveredMark.attr('time');
+      
+      tooltip.innerHTML = `
+        <div style="margin-bottom: 6px; font-weight: 600; color: #dc2626; letter-spacing: 0.01em;">${recipeName}</div>
+        <div style="display: flex; align-items: center; font-size: 13px; color: #6b7280;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="margin-right: 6px;">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>${cookTime} mins</span>
+        </div>
+        <div style="position: absolute; top: -3px; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #ef4444, #f87171); border-radius: 3px 3px 0 0;"></div>
+      `;
+      
+      tooltip.style.left = `${event.clientX + 12}px`;
+      tooltip.style.top = `${event.clientY - 12}px`;
+      tooltip.style.opacity = "1";
+      tooltip.style.transform = "translateY(0) scale(1)";
+      hoveredMark.attr("ingredients").forEach((ing: string) => {
+  enteredIngredientsButtons.forEach(b => {
+    if (b.textContent?.trim().toLowerCase() === ing.trim().toLowerCase()) {
+      b.style.backgroundColor = "red";
+    }
+  });
+});
+
+
+    } else {
+      tooltip.style.opacity = "0";
+      tooltip.style.transform = "translateY(5px) scale(0.98)";
+
+
+      let enteredIngredientsBox = document.getElementById("entered-ingredients-box");
+      var children = enteredIngredientsBox?.children;
+      if (children) 
+      {
+        for (var i = 0; i < children.length; i++) {
+          let button = children[i] as HTMLButtonElement;
+          button.style.backgroundColor = "#4CAF50";
+        }
+      }
+    }
+  }
+}
+
   function extractDataProperties() {
     if (dataCSV && foodSet) {
       const hasCalories = dataCSV.some(d => d.Calories !== undefined);
@@ -1578,7 +1974,7 @@ function handleClick(event: MouseEvent) {
     }
   }
 
-  function createRecipeCard(clickedMark : Mark<FoodMarkAttrs>, detailsSidebar : HTMLElement) {
+  function createRecipeCard(clickedMark: Mark<FoodMarkAttrs>, detailsSidebar: HTMLElement): void {
   let clickedMarkDisplayBox = document.getElementById("clicked-mark-box");
   
   if (clickedMarkDisplayBox && detailsSidebar) {
@@ -1588,7 +1984,6 @@ function handleClick(event: MouseEvent) {
       const styleElement = document.createElement('style');
       styleElement.id = 'enhanced-recipe-styles';
       styleElement.textContent = `
-        /* Recipe Card Enhanced Styling */
         #clicked-mark-box {
           padding: 0;
           height: 100%;
@@ -1736,7 +2131,6 @@ function handleClick(event: MouseEvent) {
           z-index: -1;
         }
         
-        /* AI Loading indicator */
         .ai-loading {
           display: flex;
           flex-direction: column;
@@ -1784,6 +2178,104 @@ function handleClick(event: MouseEvent) {
           border-radius: 8px;
         }
         
+        .toggle-ingredients-btn {
+          background: linear-gradient(to right, #4ecdc4, #2cb5e8);
+          color: white;
+          border: none;
+          padding: 10px 16px;
+          border-radius: 25px;
+          font-weight: 600;
+          display: flex;
+          align-items: center;
+          cursor: pointer;
+          box-shadow: 0 4px 8px rgba(78, 205, 196, 0.3);
+          transition: all 0.3s ease;
+          margin-bottom: 20px;
+        }
+        
+        .toggle-ingredients-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 12px rgba(78, 205, 196, 0.4);
+        }
+        
+        .toggle-ingredients-btn:active {
+          transform: translateY(1px);
+        }
+        
+        .toggle-ingredients-btn .icon {
+          margin-right: 8px;
+          font-size: 18px;
+          transition: transform 0.3s ease;
+        }
+        
+        .toggle-ingredients-btn.active .icon {
+          transform: rotate(180deg);
+        }
+        
+        .ingredients-container {
+          max-height: 0;
+          overflow: hidden;
+          transition: max-height 0.5s ease;
+          margin-top: 0;
+        }
+        
+        .ingredients-container.active {
+          max-height: 500px;
+        }
+        
+        .ingredients-content {
+          padding: 20px;
+          background-color: white;
+          border-radius: 12px;
+          border-left: 4px solid #f9c80e;
+          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+          position: relative;
+          z-index: 1;
+          margin-top: 10px;
+        }
+        
+        .ingredients-content ul {
+          padding-left: 20px;
+          margin: 0;
+        }
+        
+        .ingredients-content li {
+          margin-bottom: 8px;
+          position: relative;
+          padding-left: 5px;
+        }
+        
+        .ingredients-content li::before {
+          content: '•';
+          color: #ff6b6b;
+          font-weight: bold;
+          display: inline-block;
+          width: 1em;
+          margin-left: -1em;
+        }
+        
+        .ingredients-tabs {
+          display: flex;
+          margin-bottom: 15px;
+        }
+        
+        .ingredients-tab {
+          padding: 8px 16px;
+          background-color: #f5f5f5;
+          border: none;
+          border-radius: 20px;
+          margin-right: 10px;
+          cursor: pointer;
+          font-size: 14px;
+          transition: all 0.2s ease;
+        }
+        
+        .ingredients-tab.active {
+          background-color: #4ecdc4;
+          color: white;
+          box-shadow: 0 2px 8px rgba(78, 205, 196, 0.3);
+        }
+        
         @keyframes spin-recipe {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
@@ -1798,17 +2290,17 @@ function handleClick(event: MouseEvent) {
     let titleDiv = document.createElement('div');
     titleDiv.className = 'recipe-title';
     let title = document.createElement('h3');
-    title.textContent = clickedMark.attr("name");
+    title.textContent = clickedMark.attr("name") as string;
     titleDiv.appendChild(title);
     recipeCard.appendChild(titleDiv);
     
-    let imgSrc = clickedMark.attr('img').src;
+    let imgSrc = (clickedMark.attr('img') as {src: string}).src;
     let imgContainer = document.createElement('div');
     imgContainer.className = 'recipe-image-container';
     let img = document.createElement('img');
     img.src = imgSrc;
     img.className = 'recipe-image';
-    img.alt = clickedMark.attr("name") || "Recipe image";
+    img.alt = clickedMark.attr("name") as string || "Recipe image";
     imgContainer.appendChild(img);
     recipeCard.appendChild(imgContainer);
     
@@ -1824,13 +2316,123 @@ function handleClick(event: MouseEvent) {
     let contentContainer = document.createElement('div');
     contentContainer.className = 'recipe-content';
     
+    let ingredientsSection = document.createElement('div');
+    ingredientsSection.className = 'recipe-section';
+    
+    let toggleButton = document.createElement('button');
+    toggleButton.className = 'toggle-ingredients-btn';
+    toggleButton.innerHTML = '<span class="icon">▼</span> Show Ingredients';
+    toggleButton.onclick = function() {
+      const ingredientsContainer = document.getElementById('ingredients-container');
+      if (ingredientsContainer) {
+        ingredientsContainer.classList.toggle('active');
+        toggleButton.classList.toggle('active');
+        
+        if (ingredientsContainer.classList.contains('active')) {
+          toggleButton.innerHTML = '<span class="icon">▲</span> Hide Ingredients';
+        } else {
+          toggleButton.innerHTML = '<span class="icon">▼</span> Show Ingredients';
+        }
+      }
+    };
+    
+    let ingredientsContainer = document.createElement('div');
+    ingredientsContainer.className = 'ingredients-container';
+    ingredientsContainer.id = 'ingredients-container';
+    
+    let tabsContainer = document.createElement('div');
+    tabsContainer.className = 'ingredients-tabs';
+    
+    let originalTab = document.createElement('button');
+    originalTab.className = 'ingredients-tab active';
+    originalTab.textContent = 'Original';
+    
+    let cleanedTab = document.createElement('button');
+    cleanedTab.className = 'ingredients-tab';
+    cleanedTab.textContent = 'Cleaned';
+    
+    let originalIngredientsContent = document.createElement('div');
+    originalIngredientsContent.className = 'ingredients-content';
+    
+    let cleanedIngredientsContent = document.createElement('div');
+    cleanedIngredientsContent.className = 'ingredients-content';
+    cleanedIngredientsContent.style.display = 'none';
+    
+    originalTab.onclick = function() {
+      originalTab.classList.add('active');
+      cleanedTab.classList.remove('active');
+      originalIngredientsContent.style.display = 'block';
+      cleanedIngredientsContent.style.display = 'none';
+    };
+    
+    cleanedTab.onclick = function() {
+      cleanedTab.classList.add('active');
+      originalTab.classList.remove('active');
+      cleanedIngredientsContent.style.display = 'block';
+      originalIngredientsContent.style.display = 'none';
+    };
+    
+    tabsContainer.appendChild(originalTab);
+    tabsContainer.appendChild(cleanedTab);
+    
+    const id = clickedMark.id;
+    
+    if (typeof dataCSV !== 'undefined' && id) {
+      const recipeIndex = Number(id);
+      
+      if (dataCSV[recipeIndex]?.Ingredients) {
+        const ingredientsList = document.createElement('ul');
+        const ingredients = dataCSV[recipeIndex].Ingredients.split(',');
+        
+        ingredients.forEach(ingredient => {
+          if (ingredient.trim()) {
+            const li = document.createElement('li');
+            li.textContent = ingredient.trim().replaceAll("'", '').replaceAll("[", '').replaceAll("]", '');;
+            ingredientsList.appendChild(li);
+          }
+        });
+        
+        originalIngredientsContent.appendChild(ingredientsList);
+      } else {
+        originalIngredientsContent.textContent = 'No ingredients available';
+      }
+      
+      if (dataCSV[recipeIndex]?.Cleaned_Ingredients) {
+        const cleanedList = document.createElement('ul');
+        const cleanedIngredients = dataCSV[recipeIndex].Cleaned_Ingredients.split(',');
+        
+        cleanedIngredients.forEach(ingredient => {
+          if (ingredient.trim()) {
+            const li = document.createElement('li');
+            li.textContent = ingredient.trim().replaceAll("'", '').replaceAll("[", '').replaceAll("]", '');
+            cleanedList.appendChild(li);
+          }
+        });
+        
+        cleanedIngredientsContent.appendChild(cleanedList);
+      } else {
+        cleanedIngredientsContent.textContent = 'No cleaned ingredients available';
+      }
+    } else {
+      originalIngredientsContent.textContent = 'Recipe data not available';
+      cleanedIngredientsContent.textContent = 'Recipe data not available';
+    }
+    
+    ingredientsContainer.appendChild(tabsContainer);
+    ingredientsContainer.appendChild(originalIngredientsContent);
+    ingredientsContainer.appendChild(cleanedIngredientsContent);
+    
+    ingredientsSection.appendChild(toggleButton);
+    ingredientsSection.appendChild(ingredientsContainer);
+    contentContainer.appendChild(ingredientsSection);
+    
     let instructionsSection = document.createElement('div');
     instructionsSection.className = 'recipe-section';
     let instructionsTitle = document.createElement('h4');
     instructionsTitle.textContent = 'Instructions';
     let instructionsContent = document.createElement('div');
     instructionsContent.className = 'recipe-steps';
-    instructionsContent.textContent = clickedMark.attr('instructions');
+    instructionsContent.textContent = clickedMark.attr('instructions') as string;
     
     instructionsSection.appendChild(instructionsTitle);
     instructionsSection.appendChild(instructionsContent);
@@ -1995,13 +2597,11 @@ function handleClick(event: MouseEvent) {
     overflow: hidden;
   }
   
-  /* Canvas Styling */
   canvas {
     z-index: 10;
     image-rendering: optimizeSpeed;
   }
   
-  /* Loading Screen */
   .loading-screen {
     position: absolute;
     top: 50%;
@@ -2038,7 +2638,6 @@ function handleClick(event: MouseEvent) {
     display: none !important;
   }
 
-  /* Front Page Styling */
   .front-page {
     position: absolute;
     top: 0;
@@ -2120,7 +2719,6 @@ function handleClick(event: MouseEvent) {
     transform: translateX(4px);
   }
 
-  /* Ingredient Bar Styling */
   #ingredient-bar, #ingredient-bar-front {
     position: relative;
     width: 100%;
@@ -2208,7 +2806,6 @@ function handleClick(event: MouseEvent) {
     transform: translateY(-1px);
   }
 
-  /* Dropdown Styling */
   .filter-options {
     margin: 1.5rem 0;
   }
@@ -2252,7 +2849,6 @@ function handleClick(event: MouseEvent) {
   transform: translateX(0) !important;
 }
 
-  /* Recipe Card Styling */
   #clicked-mark-box {
   padding: 0;
   height: 100%;
@@ -2260,7 +2856,7 @@ function handleClick(event: MouseEvent) {
 
 .recipe-card {
   height: 100%;
-  background-color: #fff9f5; /* Warm, subtle off-white background */
+  background-color: #fff9f5;
   overflow: hidden;
   position: relative;
   display: flex;
@@ -2414,7 +3010,6 @@ function handleClick(event: MouseEvent) {
   z-index: -1;
 }
 
-/* AI Loading indicator */
 .ai-loading {
   display: flex;
   flex-direction: column;
@@ -2467,7 +3062,6 @@ function handleClick(event: MouseEvent) {
   100% { transform: rotate(360deg); }
 }
 
-/* Responsive adjustments */
 @media (max-width: 768px) {
   .recipe-header {
     height: 200px;
@@ -2511,7 +3105,6 @@ function handleClick(event: MouseEvent) {
   border-left: 3px solid var(--secondary-color);
 }
 
-/* AI Loading indicator */
 .ai-loading {
   display: flex;
   flex-direction: column;
@@ -2546,7 +3139,6 @@ function handleClick(event: MouseEvent) {
   100% { transform: rotate(360deg); }
 }
 
-/* Responsive adjustments */
 @media (max-width: 768px) {
   .recipe-header {
     height: 180px;

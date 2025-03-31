@@ -4,6 +4,8 @@ tortilla
 brussels sprout
 water
 corn syrup
+avocado
+bannaa
 sugar
 pectin
 salt
