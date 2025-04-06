@@ -13,7 +13,6 @@
   import { onMount } from "svelte";
   import { GoogleGenerativeAI } from "@google/generative-ai";
   import { API_KEY } from "../key.js";
-    import { backIn } from "svelte/easing";
 
   const genAI = new GoogleGenerativeAI(API_KEY);
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
