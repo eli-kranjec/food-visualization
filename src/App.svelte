@@ -12,7 +12,7 @@
   // import ingredientsArray from "../ingredients_filtered.js";
   import { onMount } from "svelte";
   import { GoogleGenerativeAI } from "@google/generative-ai";
-  import { API_KEY } from "../key.js";
+  let API_KEY = "AIzaSyDwT4v3B07BoeitWC6VWqbYVHcrc6mpvww"; // ill make this private later
 
   const genAI = new GoogleGenerativeAI(API_KEY);
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
