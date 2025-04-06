@@ -3,7 +3,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 export default defineConfig({
   plugins: [svelte()],
-  base: '/food-visualization/', // Replace with your actual repo name
+  base: '/food-visualization/', // Make sure this matches your repo name exactly
   server: {
     port: 3000,
     open: true,
