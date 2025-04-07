@@ -9,7 +9,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # This is important for the JamesIves action
+      contents: write
     steps:
       - uses: actions/checkout@v3
       
@@ -25,8 +25,12 @@ jobs:
       - name: Build
         run: npm run build
       
+      - name: Create .nojekyll file
+        run: touch dist/.nojekyll
+      
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: dist
           branch: gh-pages
+          force: true
