@@ -219,9 +219,12 @@ function setupIngredientSearchBar(
             
             setTimeout(() => {
               foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
-              updateVisualizationSmoothly();
               
-              hideLoadingIndicator();
+              // Preload images for the newly created food marks
+              preloadImages(dataCSV, true).then(() => {
+                updateVisualizationSmoothly();
+                hideLoadingIndicator();
+              });
             }, 100);
             
             b.onclick = () => {
@@ -233,9 +236,12 @@ function setupIngredientSearchBar(
               
               setTimeout(() => {
                 foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
-                updateVisualizationSmoothly();
                 
-                hideLoadingIndicator();
+                // Preload images for the newly created food marks
+                preloadImages(dataCSV, true).then(() => {
+                  updateVisualizationSmoothly();
+                  hideLoadingIndicator();
+                });
               }, 100);
             };
           } else {
@@ -299,9 +305,12 @@ function setupIngredientSearchBar(
             
             setTimeout(() => {
               foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
-              updateVisualizationSmoothly();
               
-              hideLoadingIndicator();
+              // Preload images for the newly created food marks
+              preloadImages(dataCSV, true).then(() => {
+                updateVisualizationSmoothly();
+                hideLoadingIndicator();
+              });
             }, 100);
             
             // console.log("Selected ingredients:", selectedIngredients);
@@ -332,9 +341,12 @@ function setupIngredientSearchBar(
         
         setTimeout(() => {
           foodSet = new MarkRenderGroup(createSortedSet(selectedIngredients, selectedFilterOption));
-          updateVisualizationSmoothly();
           
-          hideLoadingIndicator();
+          // Preload images for the newly created food marks
+          preloadImages(dataCSV, true).then(() => {
+            updateVisualizationSmoothly();
+            hideLoadingIndicator();
+          });
         }, 100);
       };
 
