@@ -4,12 +4,9 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 export default defineConfig({
   plugins: [svelte()],
   base: '/food-visualization/',
-  server: {
-    port: 3000,
-    open: true,
-  },
   build: {
     outDir: 'dist',
+    sourcemap: true,
   },
   resolve: {
     alias: {
