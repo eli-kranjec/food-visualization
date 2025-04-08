@@ -479,8 +479,8 @@ function getCanvasEdgeCoordinates() {
   };
   
   const transform = d3.zoomTransform(canvas);
-  const X_SCALAR = 0.5;
-  const Y_SCALAR = 0.5;
+  const X_SCALAR = 1 / window.devicePixelRatio;
+    const Y_SCALAR = 1 / window.devicePixelRatio;
   const scaleX = (canvas.width / rect.width);
   const scaleY = (canvas.height / rect.height);
   
@@ -577,8 +577,8 @@ function getCanvasEdgeBounds() {
   };
   
   const transform = d3.zoomTransform(canvas);
-  const X_SCALAR = 0.5;
-  const Y_SCALAR = 0.5;
+  const X_SCALAR = 1 / window.devicePixelRatio;
+    const Y_SCALAR = 1 / window.devicePixelRatio;
   const scaleX = (canvas.width / rect.width);
   const scaleY = (canvas.height / rect.height);
   
@@ -1844,6 +1844,7 @@ async function triggerFoodView() {
   }
 }
 
+
 function handleClick(event: MouseEvent) {
     let tooltip = document.getElementById("recipe-tooltip");
 
@@ -1855,8 +1856,8 @@ function handleClick(event: MouseEvent) {
     // let xRange = (450 + 19);
     // let yRange = (17 - 311);
 
-    const X_SCALAR = 0.5;
-    const Y_SCALAR = 0.5;
+    const X_SCALAR = 1 / window.devicePixelRatio;
+    const Y_SCALAR = 1 / window.devicePixelRatio;
 
     const scaleX = (canvas.width / rect.width);
     const scaleY = canvas.height / rect.height;
@@ -1910,8 +1911,8 @@ function handleClick(event: MouseEvent) {
 
   function handleHover(event: MouseEvent) {
   const rect = canvas.getBoundingClientRect();
-  const X_SCALAR = 0.5;
-  const Y_SCALAR = 0.5;
+  const X_SCALAR = 1 / window.devicePixelRatio;
+  const Y_SCALAR = 1 / window.devicePixelRatio;
 
   const scaleX = (canvas.width / rect.width);
   const scaleY = canvas.height / rect.height;
