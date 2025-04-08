@@ -1676,8 +1676,8 @@ async function triggerFoodView() {
       currentView = "food";
       
       if (!dataCSV) {
-        dataCSV = await d3.csv("src/datasets/food_data.csv");
-        umapCSV = await d3.csv("src/datasets/food_data_umap.csv");
+        dataCSV = await d3.csv(`${basePath}datasets/food_data.csv`);
+        umapCSV = await d3.csv(`${basePath}datasets/food_data_umap.csv`);
         
         extractDataProperties();
       }
