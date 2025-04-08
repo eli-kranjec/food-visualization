@@ -143,7 +143,7 @@
 
 $: selectedFilterOption = filteringDropdown?.value as FilterOption;
 
-fetch('src/cleanedIngredients.txt')
+fetch('./cleanedIngredients.txt')
   .then(response => {
     if (!response.ok) {
       throw new Error('Failed to load ingredients file');
