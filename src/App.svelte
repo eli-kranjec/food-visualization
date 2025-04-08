@@ -693,8 +693,8 @@ function getVisibleMarks(transform: d3.ZoomTransform): MarkRenderGroup<FoodMarkA
       const img = new Image();
       img.src =
         d.Image_Name === "#NAME?"
-          ? "src/placeholder_images/no-image-found.jpg"
-          : `src/datasets/Food Images/${d.Image_Name}.jpg`;
+          ? `${basePath}placeholder_images/no-image-found.jpg`
+          : `${basePath}datasets/Food Images/${d.Image_Name}.jpg`;
       imageCache[i] = img;
     });
 
