@@ -121,7 +121,8 @@
   let ticker: Ticker;
   let foodSet: MarkRenderGroup<FoodMarkAttrs>;
   let summarySet: MarkRenderGroup<SummaryMark>;
-  let imageCache: Record<string, HTMLImageElement> = {};
+  let imageCache: Record<string, HTMLImageElement | null> = {};
+  let imageLoadingPromises: Record<string, Promise<HTMLImageElement>> = {};
   let summaryPositionMap: PositionMap;
   let foodPositionMap : PositionMap;
   let imagesLoaded: boolean = false;
@@ -144,6 +145,7 @@
 $: selectedFilterOption = filteringDropdown?.value as FilterOption;
 
 const basePath = import.meta.env.BASE_URL || '/';
+
 fetch(`${basePath}cleanedIngredients.txt`)
   .then(response => {
     if (!response.ok) {
@@ -685,32 +687,77 @@ function getVisibleMarks(transform: d3.ZoomTransform): MarkRenderGroup<FoodMarkA
 
 
 
+  function loadImageOnDemand(id: number): HTMLImageElement | null {
+    if (imageCache[id] !== undefined) {
+      return imageCache[id];
+    }
+    
+    imageCache[id] = null;
+    
+    if (!imageLoadingPromises[id]) {
+      imageLoadingPromises[id] = new Promise<HTMLImageElement>((resolve, reject) => {
+        if (!dataCSV || !dataCSV[id]) {
+          resolve(new Image()); 
+          return;
+        }
+        
+        const img = new Image();
+        
+        img.onload = () => {
+          imageCache[id] = img;
+          resolve(img);
+          requestAnimationFrame(drawMarks);
+        };
+        
+        img.onerror = () => {
+          // On error, use a placeholder image
+          const placeholderImg = new Image();
+          placeholderImg.src = `${basePath}placeholder_images/no-image-found.jpg`;
+          placeholderImg.onload = () => {
+            imageCache[id] = placeholderImg;
+            resolve(placeholderImg);
+            requestAnimationFrame(drawMarks);
+          };
+          placeholderImg.onerror = () => {
+            imageCache[id] = new Image();
+            resolve(new Image());
+          };
+        };
+        
+        img.src = dataCSV[id].Image_Name === "#NAME?"
+          ? `${basePath}placeholder_images/no-image-found.jpg`
+          : `${basePath}datasets/Food Images/${dataCSV[id].Image_Name}.jpg`;
+      });
+    }
+    
+    return null;
+  }
+
   function preloadImages(
     dataCSV: d3.DSVRowArray,
     initialSetup: boolean = false
   ): Promise<void[]> {
-    dataCSV.forEach((d, i) => {
-      const img = new Image();
-      img.src =
-        d.Image_Name === "#NAME?"
-          ? `${basePath}placeholder_images/no-image-found.jpg`
-          : `${basePath}datasets/Food Images/${d.Image_Name}.jpg`;
-      imageCache[i] = img;
-    });
-
     if (initialSetup) {
       const transform = d3.zoomTransform(canvas);
       const visibleMarks = getVisibleMarks(transform);
-
+      
       return Promise.all(
-        visibleMarks.map((m, i) => {
+        visibleMarks.map((mark) => {
+          const id = Number(mark.id);
           return new Promise<void>((resolve) => {
-            const img = imageCache[Number(m.id)];
-            if (img.complete) {
-              resolve();
-            } else {
-              img.onload = () => resolve();
+            if (!imageCache[id]) {
+              loadImageOnDemand(id);
             }
+            
+            const checkImage = () => {
+              if (imageCache[id] && imageCache[id]?.complete) {
+                resolve();
+              } else {
+                setTimeout(checkImage, 50);
+              }
+            };
+            
+            checkImage();
           });
         })
       );
@@ -731,7 +778,11 @@ function getVisibleMarks(transform: d3.ZoomTransform): MarkRenderGroup<FoodMarkA
     new Mark<FoodMarkAttrs>(id, {
       x: new Attribute(0),
       y: new Attribute(0),
-      img: { valueFn: () => imageCache[Number(id)] },
+      img: { 
+        valueFn: () => {
+          return loadImageOnDemand(Number(id));
+        }
+      },
       ingredients: {
         valueFn: (mark) => {
           const ingArr = findIngredients(Number(id));
@@ -1040,6 +1091,14 @@ const drawMarks = () => {
     
     const visibleMarks = getVisibleMarks(transform);
     
+    // Preload images for visible marks that aren't already loading
+    visibleMarks.forEach(mark => {
+      const id = Number(mark.id);
+      if (imageCache[id] === undefined) {
+        loadImageOnDemand(id);
+      }
+    });
+    
     if (
       visibleMarks.count() > renderLimit &&
       !drawTransitionBegun &&
@@ -1064,17 +1123,19 @@ const drawMarks = () => {
             
             const transformedX = transform.applyX(x);
             const transformedY = transform.applyY(y);
+            
+            ctx.beginPath();
+            ctx.arc(
+              transformedX + adjustedSize,
+              transformedY + adjustedSize,
+              adjustedSize,
+              0,
+              Math.PI * 2,
+              true
+            );
+            ctx.closePath();
+            
             if (img && img.src && img.complete) {
-              ctx.beginPath();
-              ctx.arc(
-                transformedX + adjustedSize,
-                transformedY + adjustedSize,
-                adjustedSize,
-                0,
-                Math.PI * 2,
-                true
-              );
-              ctx.closePath();
               ctx.clip();
               ctx.drawImage(
                 img,
@@ -1082,20 +1143,14 @@ const drawMarks = () => {
                 transformedY,
                 adjustedSize * 2,
                 adjustedSize * 2
-              );              
-            } else {
-              ctx.beginPath();
-              ctx.arc(
-                transformedX + adjustedSize,
-                transformedY + adjustedSize,
-                adjustedSize,
-                0,
-                Math.PI * 2,
-                true
               );
+            } else {
               ctx.fillStyle = "lightgray";
               ctx.fill();
-              ctx.closePath();
+              
+              if (!imageCache[Number(mark.id)]) {
+                loadImageOnDemand(Number(mark.id));
+              }
             }
           });
           ctx.restore();
@@ -1975,6 +2030,10 @@ function handleClick(event: MouseEvent) {
   }
 
   function createRecipeCard(clickedMark: Mark<FoodMarkAttrs>, detailsSidebar: HTMLElement): void {
+    const id = Number(clickedMark.id);
+    if (!imageCache[id]) {
+      loadImageOnDemand(id);
+    }
   let clickedMarkDisplayBox = document.getElementById("clicked-mark-box");
   
   if (clickedMarkDisplayBox && detailsSidebar) {
