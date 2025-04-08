@@ -143,7 +143,8 @@
 
 $: selectedFilterOption = filteringDropdown?.value as FilterOption;
 
-fetch('./cleanedIngredients.txt')
+const basePath = import.meta.env.BASE_URL || '/';
+fetch(`${basePath}cleanedIngredients.txt`)
   .then(response => {
     if (!response.ok) {
       throw new Error('Failed to load ingredients file');
